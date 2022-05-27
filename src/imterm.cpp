@@ -499,8 +499,11 @@ int __stdcall WinMain(
 
     // Our state
     bool show_demo_window = true;
-    bool show_another_window = false;
+    bool show_another_window = true;
+    bool show_another_window2 = true;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+    bool once = true;
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -531,16 +534,55 @@ int __stdcall WinMain(
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        //// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        //if (show_demo_window)
-        //    ImGui::ShowDemoWindow(&show_demo_window);
+#ifdef IMGUI_HAS_VIEWPORT
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        if (once) {
+            once = false;
+            ImGui::SetNextWindowPos(viewport->WorkPos);
+            ImGui::SetNextWindowSize(viewport->WorkSize);
+           // ImGui::Setnex
+        }
+#else 
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+#endif
 
-        //// 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-        //{
+        ImGui::SetNextWindowViewport(viewport->ID);
+        //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        //ImGui::Begin(..., ..., ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
+        //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
+        //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoResize);
+        ImGui::Begin("ALKJLKJLK", NULL);
+
+        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+
+                // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+        // if (show_demo_window)
+        //    ImGui::ShowDemoWindow(&show_demo_window);
+        //[...]
+
+        if (show_another_window)
+        {
+            ImGui::SetNextWindowViewport(viewport->ID);
+            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+            ImGui::Text("Hello from another window!");
+            if (ImGui::Button("Close Me"))
+                show_another_window = false;
+            ImGui::End();
+        }
+        ImGui::End();
+        
+
+
+
+        // // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
+        // {
         //    static float f = 0.0f;
         //    static int counter = 0;
 
+        //    ImGui::SetNextWindowSize
         //    ImGui::Begin("Hello, world 2022!");                          // Create a window called "Hello, world!" and append into it.
+        //    //ImGui::
 
         //    ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
         //    ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -556,17 +598,20 @@ int __stdcall WinMain(
 
         //    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         //    ImGui::End();
-        //}
+        // }
 
         // 3. Show another simple window.
-        if (show_another_window)
+        if (show_another_window2)
         {
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+            ImGui::SetNextWindowViewport(viewport->ID);
+            ImGui::Begin("Another Window 2", &show_another_window2);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
             ImGui::Text("Hello from another window!");
             if (ImGui::Button("Close Me"))
-                show_another_window = false;
+                show_another_window2 = false;
             ImGui::End();
         }
+
+        //ImGui::PopStyleVar(1);
 
         // Rendering
         ImGui::Render();
