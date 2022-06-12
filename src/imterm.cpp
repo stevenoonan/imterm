@@ -11,6 +11,7 @@
 
 #include <windows.h>
 
+#include "capture.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -412,8 +413,10 @@ int __stdcall WinMain(
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    // 
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    // 
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -499,8 +502,8 @@ int __stdcall WinMain(
 
     // Our state
     bool show_demo_window = true;
-    bool show_another_window = true;
-    bool show_another_window2 = true;
+    bool show_another_window = false;
+    bool show_another_window2 = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     bool once = true;
@@ -536,8 +539,9 @@ int __stdcall WinMain(
 
 #ifdef IMGUI_HAS_VIEWPORT
         ImGuiViewport* viewport = ImGui::GetMainViewport();
+        //viewport->Flags
         if (once) {
-            once = false;
+            //once = false;
             ImGui::SetNextWindowPos(viewport->WorkPos);
             ImGui::SetNextWindowSize(viewport->WorkSize);
            // ImGui::Setnex
@@ -547,18 +551,21 @@ int __stdcall WinMain(
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
 #endif
 
-        ImGui::SetNextWindowViewport(viewport->ID);
+        //ImGui::SetNextWindowViewport(viewport->ID);
         //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         //ImGui::Begin(..., ..., ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
         //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
         //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoResize);
-        ImGui::Begin("ALKJLKJLK", NULL);
+        ImGui::Begin("First Window" );
 
-        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+        imterm::CaptureWindowCreate();
+        ImGui::End();
 
-                // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        // if (show_demo_window)
-        //    ImGui::ShowDemoWindow(&show_demo_window);
+        //ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+
+        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+        if (show_demo_window)
+            ImGui::ShowDemoWindow(&show_demo_window);
         //[...]
 
         if (show_another_window)
@@ -570,7 +577,7 @@ int __stdcall WinMain(
                 show_another_window = false;
             ImGui::End();
         }
-        ImGui::End();
+        
         
 
 
