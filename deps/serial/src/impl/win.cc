@@ -3,6 +3,7 @@
 /* Copyright 2012 William Woodall and John Harrison */
 
 #include <sstream>
+#include <codecvt>
 
 #include "serial/impl/win.h"
 
@@ -20,6 +21,9 @@ using serial::SerialException;
 using serial::PortNotOpenedException;
 using serial::IOException;
 
+using utf8_wchar_facet = std::codecvt_utf8<wchar_t>;
+static std::wstring_convert<utf8_wchar_facet, wchar_t> wstr_converter;
+
 inline wstring
 _prefix_port_if_needed(const wstring &input)
 {
@@ -35,10 +39,13 @@ Serial::SerialImpl::SerialImpl (const string &port, unsigned long baudrate,
                                 bytesize_t bytesize,
                                 parity_t parity, stopbits_t stopbits,
                                 flowcontrol_t flowcontrol)
-  : port_ (port.begin(), port.end()), fd_ (INVALID_HANDLE_VALUE), is_open_ (false),
+  : fd_ (INVALID_HANDLE_VALUE), is_open_ (false),
     baudrate_ (baudrate), parity_ (parity),
     bytesize_ (bytesize), stopbits_ (stopbits), flowcontrol_ (flowcontrol)
 {
+
+    port_ = wstr_converter.from_bytes(port);
+
   if (port_.empty () == false)
     open ();
   read_mutex = CreateMutex(NULL, false, NULL);
@@ -360,13 +367,13 @@ Serial::SerialImpl::write (const uint8_t *data, size_t length)
 void
 Serial::SerialImpl::setPort (const string &port)
 {
-  port_ = wstring(port.begin(), port.end());
+    port_ = wstr_converter.from_bytes(port);
 }
 
 string
 Serial::SerialImpl::getPort () const
 {
-  return string(port_.begin(), port_.end());
+    return wstr_converter.to_bytes(port_);
 }
 
 void
@@ -641,6 +648,24 @@ Serial::SerialImpl::writeUnlock()
     THROW (IOException, "Error releasing write mutex.");
   }
 }
+
+//std::wstring
+//str_to_wstr(const std::string& str)
+//{
+//    using convert_typeX = std::codecvt_utf8<wchar_t>;
+//    std::wstring_convert<convert_typeX, wchar_t> converterX;
+//
+//    return converterX.from_bytes(str);
+//}
+
+//std::string
+//wstr_to_str(const std::wstring& wstr)
+//{
+//    using convert_typeX = std::codecvt_utf8<wchar_t>;
+//    std::wstring_convert<convert_typeX, wchar_t> converterX;
+//
+//    return converterX.to_bytes(wstr);
+//}
 
 #endif // #if defined(_WIN32)
 

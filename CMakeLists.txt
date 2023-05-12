@@ -3,8 +3,17 @@
 #  cd build
 #  cmake -g "Visual Studio 14 2015" .. 
 
-cmake_minimum_required(VERSION 2.20)
-project(imterm C CXX)
+
+
+cmake_minimum_required(VERSION 3.20) 
+
+if(POLICY CMP0048)
+    #policy for VERSION in cmake 3.0
+    cmake_policy(SET CMP0048 NEW)
+endif()
+
+
+PROJECT(imterm LANGUAGES C CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
