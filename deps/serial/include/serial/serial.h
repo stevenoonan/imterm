@@ -681,7 +681,7 @@ public:
       e_what_ = ss.str();
   }
   SerialException (const SerialException& other) : e_what_(other.e_what_) {}
-  virtual ~SerialException() throw() {}
+  virtual ~SerialException() noexcept {}
   virtual const char* what () const throw () {
     return e_what_.c_str();
   }
@@ -716,7 +716,7 @@ public:
       ss << ", file " << file_ << ", line " << line_ << ".";
       e_what_ = ss.str();
   }
-  virtual ~IOException() throw() {}
+  virtual ~IOException() noexcept {}
   IOException (const IOException& other) : line_(other.line_), e_what_(other.e_what_), errno_(other.errno_) {}
 
   int getErrorNumber () const { return errno_; }
@@ -738,7 +738,7 @@ public:
       e_what_ = ss.str();
   }
   PortNotOpenedException (const PortNotOpenedException& other) : e_what_(other.e_what_) {}
-  virtual ~PortNotOpenedException() throw() {}
+  virtual ~PortNotOpenedException() noexcept {}
   virtual const char* what () const throw () {
     return e_what_.c_str();
   }

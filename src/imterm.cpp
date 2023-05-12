@@ -384,7 +384,7 @@ int __stdcall WinMain(
         return 1;
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Dear ImGui GLFW+Vulkan example", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "imterm", NULL, NULL);
 
     // Setup Vulkan
     if (!glfwVulkanSupported())
@@ -556,8 +556,7 @@ int __stdcall WinMain(
         //ImGui::Begin(..., ..., ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
         //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
         //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoResize);
-        ImGui::Begin("First Window" );
-
+        ImGui::Begin("Capture Window" );
         imterm::CaptureWindowCreate();
         ImGui::End();
 
@@ -568,11 +567,14 @@ int __stdcall WinMain(
             ImGui::ShowDemoWindow(&show_demo_window);
         //[...]
 
+        imterm::PortSelectionWindow(viewport->ID);
+
         if (show_another_window)
         {
             ImGui::SetNextWindowViewport(viewport->ID);
             ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
+            //ImGui::Text("Hello from another window!");
+
             if (ImGui::Button("Close Me"))
                 show_another_window = false;
             ImGui::End();
