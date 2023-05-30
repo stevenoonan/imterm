@@ -7,8 +7,10 @@
 #include <chrono>
 
 using namespace std::chrono;
+using namespace std::literals;
 
 #include "imgui.h"
+#include "toml.hpp"
 
 namespace imterm {
 
@@ -28,11 +30,11 @@ namespace imterm {
         //const T * const _data_copy;
 
     public:
-        ComboDataItem(const std::string& id_str, const std::string& display_str, bool is_selected, const T& data)
+        ComboDataItem(std::string id_str, std::string display_str, bool is_selected, T& data)
             : _id_str(id_str), _display_str(display_str), _is_selected(is_selected), _data(data)
         {}
 
-        ComboDataItem(const std::string& display_str, bool is_selected, const T& data)
+        ComboDataItem(std::string display_str, bool is_selected, T& data)
             : _id_str(display_str), _display_str(display_str), _is_selected(is_selected), _data(data)
         {}
 
@@ -80,21 +82,18 @@ namespace imterm {
         size_t _selected_index = NO_SELECTION;
         std::string _label;
         std::string _hidden_label;
+        std::string _toml_id;
         ImGuiComboFlags _flags = 0;
 
     public:
 
         ComboData(std::string label)
             : _label(label), _hidden_label(std::string("##").append(label))
-        {}
-
-        // void push_back(const T& value) {
-        //     _items.push_back(value);
-        // }
-
-        // void pop_back() {
-        //     _items.pop_back();
-        // }
+        {
+            _toml_id = _label;
+            std::transform(_toml_id.begin(), _toml_id.end(), _toml_id.begin(), ::tolower);
+            std::replace(_toml_id.begin(), _toml_id.end(), ' ', '_');
+        }
 
         void set_items(std::vector<ComboDataItem<T>> new_items) {
             ComboDataItem<T> * selected_item = get_selected_item_ptr(true);
@@ -168,13 +167,6 @@ namespace imterm {
         }
 
         size_t set_selected_item(ComboDataItem<T>& needle) {
-            // auto it = std::find(_items.begin(), _items.end(), needle);
-            // if (it != _items.end()) {
-            //     int new_selected_index = std::distance(_items.begin(), it);
-            //     set_selected_index(new_selected_index);
-            // } else {
-            //     throw std::out_of_range("item does not exist in the list of items");
-            // }
             return set_selected_item(&needle);
         }
 
@@ -194,6 +186,25 @@ namespace imterm {
             set_selected_index(new_selected_index);
 
             return new_selected_index;
+        }
+
+        size_t set_selected_item(toml::node_view<toml::node> node) {
+
+            std::optional<std::string> value_str = node[_toml_id].value<std::string>();
+
+            if (value_str.has_value()) {
+                for (int i = 0; i < _items.size(); i++) {
+                    if (_items[i].get_display_str() == value_str) {
+                        set_selected_index(i);
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        void put_selected_item(toml::table * tbl) {
+            tbl->insert(_toml_id, get_selected_item().get_display_str());
         }
 
         ComboDataItem<T>* get_selected_item_ptr(bool null_ok=false) {

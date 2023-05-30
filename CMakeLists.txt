@@ -12,8 +12,15 @@ if(POLICY CMP0048)
     cmake_policy(SET CMP0048 NEW)
 endif()
 
+# Copy font to build directory, it must placed before any targets are defined.
+configure_file("resources/fonts/JetBrainsMono-Medium.ttf" ${CMAKE_BINARY_DIR} COPYONLY)
+
 
 PROJECT(imterm LANGUAGES C CXX)
+
+# Set C++20 standard
+set(CMAKE_CXX_STANDARD 20) 
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
@@ -35,16 +42,30 @@ include_directories(${GLFW_DIR}/include)
 # Dear ImGui
 set(IMGUI_DIR deps/imgui)
 include_directories(${IMGUI_DIR} ${IMGUI_DIR}/backends ..)
+option(IMGUI_SHOW_DEMO_WINDOW "Display the Dear ImGui demo window" OFF)
+
+# beep
+add_subdirectory(deps/beep)
+include_directories(deps/beep)
+
+# toml++
+find_package(tomlplusplus)
+
 
 # Libraries
 find_package(Vulkan REQUIRED)
 #find_library(VULKAN_LIBRARY
   #NAMES vulkan vulkan-1)
 #set(LIBRARIES "glfw;${VULKAN_LIBRARY}")
-set(LIBRARIES "glfw;Vulkan::Vulkan")
+set(LIBRARIES "glfw;Vulkan::Vulkan;tomlplusplus::tomlplusplus;beep")
+#set(LIBRARIES "glfw;Vulkan::Vulkan")
 
 # Use vulkan headers from glfw:
 include_directories(${GLFW_DIR}/deps)
+
+
+
+include_directories(deps/ImGuiColorTextEdit)
 
 file(GLOB sources src/*.cpp)
 
@@ -56,11 +77,17 @@ add_executable(imterm WIN32
 	${IMGUI_DIR}/imgui_draw.cpp 
 	${IMGUI_DIR}/imgui_demo.cpp 
 	${IMGUI_DIR}/imgui_tables.cpp 
-	${IMGUI_DIR}/imgui_widgets.cpp)
+	${IMGUI_DIR}/imgui_widgets.cpp
+	)
 
 target_link_libraries(imterm ${LIBRARIES})
-target_compile_definitions(imterm PUBLIC -DImTextureID=ImU64)
+target_compile_definitions(imterm PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+if (IMGUI_SHOW_DEMO_WINDOW)
+    target_compile_definitions(imterm PUBLIC IMGUI_SHOW_DEMO_WINDOW)
+endif()
 
 add_subdirectory(deps/serial)
 target_link_libraries(imterm serial)
 include_directories(deps/serial/include)
+
+

@@ -3,6 +3,7 @@
 ################################################################################
 
 /build
-/out/build/x64-Debug
+/out
 /.vs
 /.vscode
+/CMakeUserPresets.json

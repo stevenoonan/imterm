@@ -19,6 +19,7 @@
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>          // printf, fprintf
 #include <stdlib.h>         // abort
+#include <filesystem>
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -27,9 +28,9 @@
 // [Win32] Our example includes a copy of glfw3.lib pre-compiled with VS2010 to maximize ease of testing and compatibility with old VS compilers.
 // To link with VS2010-era libraries, VS2015+ requires linking with legacy_stdio_definitions.lib, which we do using this pragma.
 // Your own project should not be affected, as you are likely to link with a newer binary of GLFW that is adequate for your version of Visual Studio.
-#if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
-#pragma comment(lib, "legacy_stdio_definitions")
-#endif
+//#if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
+//#pragma comment(lib, "legacy_stdio_definitions")
+//#endif
 
 //#define IMGUI_UNLIMITED_FRAME_RATE
 #ifdef _DEBUG
@@ -410,7 +411,7 @@ int __stdcall WinMain(
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     // 
@@ -423,6 +424,8 @@ int __stdcall WinMain(
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsClassic();
+
+    io.IniFilename = "imterm.ini";
 
     // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
     ImGuiStyle& style = ImGui::GetStyle();
@@ -450,25 +453,12 @@ int __stdcall WinMain(
     init_info.CheckVkResultFn = check_vk_result;
     ImGui_ImplVulkan_Init(&init_info, wd->RenderPass);
 
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return NULL. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
-    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
-    ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\CascadiaCode.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
-    IM_ASSERT(font != NULL);
-
-    //ImFontConfig font_cfg = ImFontConfig();
-    //font_cfg.SizePixels = 26;
-    //io.Fonts->AddFontDefault(&font_cfg);
+    // If font does not exist, the default will be used.
+    std::string font_path = "JetBrainsMono-Medium.ttf";
+    if (std::filesystem::exists(font_path)) {
+        ImFont* font = io.Fonts->AddFontFromFileTTF("JetBrainsMono-Medium.ttf", 20.0f);
+        IM_ASSERT(font != NULL);
+    }
 
     // Upload Fonts
     {
@@ -501,9 +491,6 @@ int __stdcall WinMain(
     }
 
     // Our state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    bool show_another_window2 = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     bool once = true;
@@ -551,36 +538,19 @@ int __stdcall WinMain(
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
 #endif
 
-        //ImGui::SetNextWindowViewport(viewport->ID);
-        //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        //ImGui::Begin(..., ..., ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
-        //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
-        //ImGui::Begin("ALKJLKJLK", NULL, ImGuiWindowFlags_NoResize);
-        ImGui::Begin("Capture Window" );
-        imterm::CaptureWindowCreate();
-        ImGui::End();
 
         //ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-
+//#define IMGUI_SHOW_DEMO_WINDOW
+#ifdef IMGUI_SHOW_DEMO_WINDOW
         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        if (show_demo_window)
-            ImGui::ShowDemoWindow(&show_demo_window);
+        static bool show_demo_window = true;
+        ImGui::ShowDemoWindow(&show_demo_window);
         //[...]
+#else
+        imterm::CaptureWindowCreate();
+#endif
 
-        imterm::PortSelectionWindow(viewport->ID);
-
-        if (show_another_window)
-        {
-            ImGui::SetNextWindowViewport(viewport->ID);
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            //ImGui::Text("Hello from another window!");
-
-            if (ImGui::Button("Close Me"))
-                show_another_window = false;
-            ImGui::End();
-        }
-        
-        
+        //imterm::PortSelectionWindow(viewport->ID);
 
 
 
@@ -608,17 +578,6 @@ int __stdcall WinMain(
         //    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         //    ImGui::End();
         // }
-
-        // 3. Show another simple window.
-        if (show_another_window2)
-        {
-            ImGui::SetNextWindowViewport(viewport->ID);
-            ImGui::Begin("Another Window 2", &show_another_window2);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-                show_another_window2 = false;
-            ImGui::End();
-        }
 
         //ImGui::PopStyleVar(1);
 
