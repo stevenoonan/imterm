@@ -56,23 +56,10 @@ namespace imterm {
             size_t available = serial->available();
 
             if (available > 0) {
-               
-
-                //std::string new_bytes = serial->read(available);                
-                //terminal.TerminalInput(new_bytes.c_str());
-
-                //size_t found = new_bytes.find("999");
-
-                //if (found != std::string::npos) {
-                //    std::cout << "Pattern found at index " << found << std::endl;
-                //}
-
-                //uint8_t* buffer = new uint8_t[available];
-                //std::unique_ptr<uint8_t[]> buffer(new uint8_t[available]);
+ 
                 std::vector<uint8_t> buffer(available);
                 serial->read(buffer, available);
                 terminal.TerminalInput(buffer);
-                //delete[] buffer;
 
                 while (terminal.TerminalOutputAvailable()) {
                     auto output = terminal.GetTerminalOutput();
@@ -94,7 +81,6 @@ namespace imterm {
 
         ImGui::Text(combo_data.get_label());
         ImGui::SameLine();
-        //ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 5);
         ImGui::SetCursorPosX(128);
 
         if (ImGui::BeginCombo(combo_data.get_hidden_label(), combo_data.get_preview_value(), combo_data.get_flags()))
@@ -204,6 +190,7 @@ namespace imterm {
                  flow_control_items.push_back(ComboDataItem<flowcontrol_t>("Software", true, flowcontrol_values[2]));
                 cbo_flow_control_data.set_items(flow_control_items);
 
+                // TODO:  Create a class for imterm.toml interfacing
                 std::string cfg_file = "imterm.toml";
                 if (!std::filesystem::exists(cfg_file)) {
                     auto tbl = toml::table{

@@ -2,7 +2,7 @@
 
 #include "escape_sequence_parser.h"
 
-EscapeSequenceParser::EscapeSequenceParser() : mStage(Stage::Inactive), mError(Error::NotReady)
+EscapeSequenceParser::EscapeSequenceParser() : mStage(Stage::Inactive), mError(Error::NotReady), mIdentifier(0)
 {
 }
 

@@ -25,9 +25,7 @@ namespace imterm {
         std::string _id_str;
         std::string _display_str;
         bool _is_selected;
-        //const T * const _data;
         const T& _data;
-        //const T * const _data_copy;
 
     public:
         ComboDataItem(std::string id_str, std::string display_str, bool is_selected, T& data)
@@ -61,10 +59,6 @@ namespace imterm {
         void set_is_selected(bool val) {
             _is_selected = val;
         }
-
-        // const T& get_data() const {
-        //     return *_data;
-        // }
 
         const T& get_data() const {
             return _data;

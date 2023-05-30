@@ -101,7 +101,6 @@ EscapeSequenceParser::Command TerminalState::Update(EscapeSequenceParser::ParseR
         [[fallthrough]];
     case 'f':
         if ((aSeq.mIdentifier == 'H') && aSeq.mCommandData.size() == 0) {
-            // ECS[H
             type = MoveCursorToHome;
             mCursorPos.mColumn = 0;
             mCursorPos.mLine = 0;
@@ -171,7 +170,12 @@ EscapeSequenceParser::Command TerminalState::Update(EscapeSequenceParser::ParseR
         break;
     case 'J':
 
-        // None of these are processed here
+        // None of these are processed here. The actual clearing of lines
+        // occurs in the TerminalView.
+
+        // TODO: Consider creating an interface that TerminalState gets an
+        // object of (via dependency injection) so it can call an Erase()
+        // function directly in this code.
 
         if (aSeq.mCommandData.size() == 0) {
             type = EraseDisplayAfterCursor;
@@ -202,6 +206,10 @@ EscapeSequenceParser::Command TerminalState::Update(EscapeSequenceParser::ParseR
     case 'K':
 
         // None of these are processed here
+
+        // TODO: Consider creating an interface that TerminalState gets an
+        // object of (via dependency injection) so it can call an Erase()
+        // function directly in this code.
 
         if (aSeq.mCommandData.size() == 0) {
             type = EraseLineAfterCursor;

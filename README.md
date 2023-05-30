@@ -9,7 +9,7 @@ features (line editing, coloring, history, etc.).
 Future enhancements will contains features that help me develop and debug 
 embedded systems, such as timestamping and hexadecimal view.
 
-Written in C++ with multiplatform, hardware accelerated GUI based on [Dear ImGui](https://github.com/ocornut/imgui).
+Written in C++20 with multiplatform, hardware accelerated GUI based on [Dear ImGui](https://github.com/ocornut/imgui).
 I have tested it in Windows and Linux. Mac should not be difficult to get working.
 
 Uses [conan](https://conan.io/) and CMake. Submodules are currently used for 

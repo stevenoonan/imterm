@@ -296,39 +296,31 @@ int TerminalView::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aVa
 	return totalLines;
 }
 
-//int TerminalView::TerminalInput(const uint8_t * aValue, size_t aValueLen)
+
 int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 {
 	/*
 	 * We want to provide terminal scrollback and the ability to directly modify
 	 * the terminal 'screen' / buffer.
 	 * 
-	 * The original TextEditor control maintains a cursor that could be moved
-	 * by the user via keyboard or mouse. This will remain untouched. The user
-	 * can move the cursor to scroll back but will not be able to edit text
-	 * directly. Instead, entered characters are sent to the to CPU and CPU can
-	 * echo typed in characters to the terminal if it chooses.
-	 * 
-	 * A terminal cursor will be maintained in addition to the original cursor.
-	 * The terminal cursor will be a coordinate (1,1) representing the top left
+	 * The terminal cursor will be a coordinate (0,0) representing the top left
 	 * of the terminal to (x,y) representing the bottom left. The maximum x and
 	 * y will be the total columns and rows viewable without scrolling the GUI 
 	 * control. This will be cacluated each frame, so if the GUI is resized then
 	 * the next frame will have a different terminal size.
 	 * 
-	 * When resized, old terminal output will likely become garbled in some cases
-	 * as this is unavoidable.
+	 * The terminal row and column when reported will be (1,1) based.
 	 * 
 	 * When the screen is empty at the start, each new line will increment the the
 	 * terminal cursor row (y) position. When the terminal cursor is at the last
 	 * (highest numbered, bottom most) row visable, the terminal cursor row will
 	 * maintain that value. New lines will now cause row 0 (at the top) to no
 	 * longer be a part of the terminal buffer. It will still be visable to the GUI
-	 * and the user can scroll up to see it. However, termain escape sequences
+	 * and the user can scroll up to see it. However, terminal escape sequences
 	 * will not be able to modify that text any longer.
 	 * 
 	 * If terminal escape sequences want to modify row Y before Y lines have been
-	 * inputted by the source, new empty lines will be added to accomdate. If
+	 * inputted by the source, new empty lines will be added to accommodate. If
 	 * terminal escape sequences want to modify column X and column X on that row
 	 * doesn't exist, spaces will generated in the backing data structure to allow
 	 * for it.
@@ -338,37 +330,23 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 
 	assert(!mReadOnly);
 
+	// Get a reference for easy... uhm, reference, to the data.
 	int& termRowI = mTermState.getRowIndex();
 	int& termColI = mTermState.getColumnIndex();
-
-	//float scrollX = ImGui::GetScrollX();
-	//float scrollY = ImGui::GetScrollY();
 
 	auto height = ImGui::GetWindowHeight();
 	auto width = ImGui::GetWindowWidth();
 
-	//auto top = 1 + (int)ceil(mCharAdvance.y);
 	int termRowMaxI = std::max((int)ceil(mLastRenderGeometry.mContentRegionAvail.y / mCharAdvance.y) - 1, 0);
 	int termColMaxI = std::max((int)ceil((mLastRenderGeometry.mContentRegionAvail.x - mLastRenderGeometry.mTextScreenPos.x)/ mCharAdvance.x) - 1, 0);
 	mTermState.SetBounds(Coordinates(termRowMaxI, termColMaxI));
 
 	size_t mLinesI = 0;
-	//size_t mLineColI = 0;
-
-
-
-	//auto left = (int)ceil(scrollX / mCharAdvance.x);
-	//auto right = (int)ceil((scrollX + width) / mCharAdvance.x);
-	//return (bottom >= mLines.size());
-
-	//int cindex = GetCharacterIndex(aWhere);
-	//int cindex = termCol - 1;
 
 	const uint8_t* aValue = aVector.data();
 	size_t dataLength = aVector.size();
 
 	int totalLines = 0;
-	//while (*aValue != '\0')
 	while (dataLength-- > 0)
 	{
 		assert(!mLines.empty());
@@ -376,7 +354,6 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 		if (termRowI > termRowMaxI) {
 			termRowI = termRowMaxI;
 		}
-		//assert(termColI <= termColMaxI);
 
 		// Terminal row is greater than the total number lines we have. This can
 		// occur at the start of running.
@@ -394,10 +371,6 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 			mLinesI = (mLines.size()-1) - (termRowMaxI - termRowI);
 		}
 
-		// Create spaces to allow column to be accessed
-		//while (mLines[mLinesI].size() < termColI) {
-		//	mLines[mLinesI].push_back(Glyph(' ', PaletteIndex::Default));
-		//}
 		if (*aValue == 0) {
 			++aValue;
 		}
@@ -420,38 +393,22 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 		}
 		else if (*aValue == '\n')
 		{
-
-			//if (termColI < (int)mLines[mLinesI].size())
-			//{
-			//	auto& newLine = InsertLine(mLinesI + 1);
-			//	auto& line = mLines[mLinesI];
-			//	newLine.insert(newLine.begin(), line.begin() + termColI, line.end());
-			//	line.erase(line.begin() + termColI, line.end());
-			//}
-			//else
-			//{
-			//	InsertLine(mLinesI + 1);
-			//}
-
+			// Insert a line but don't reset the column index
 			InsertLine(++mLinesI);
-
-			//++mLinesI;
 			++termRowI;
-			//aWhere.mColumn = 0;
-			//termColI = 0;
 			++totalLines;
 			++aValue;
 		}
 		else
 		{
 
-
-
 			auto& line = mLines[mLinesI];
 			auto d = UTF8CharLength(*aValue);
 			if (d > 1) {
 				auto pi = GetPaletteIndex(mTermState);
 				while (d-- > 0 && *aValue != '\0') {
+
+					// TODO: Functionalize repeated code `while (mLines[mLinesI].size() < termColI)...`
 
 					while (mLines[mLinesI].size() < termColI) {
 						mLines[mLinesI].push_back(Glyph(' ', PaletteIndex::Default));
@@ -474,6 +431,8 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 
 				if (escSeq.mOutputChar) {
 
+					// TODO: Functionalize repeated code `while (mLines[mLinesI].size() < termColI)...`
+
 					while (mLines[mLinesI].size() < termColI) {
 						mLines[mLinesI].push_back(Glyph(' ', PaletteIndex::Default));
 					}
@@ -490,6 +449,10 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 				else if ((escSeq.mStage == EscapeSequenceParser::Stage::Inactive) && (escSeq.mError == EscapeSequenceParser::Error::None)) {
 					auto cmd = mTermState.Update(escSeq);
 					
+					// TODO: Use dependency injection when creating TerminalState
+					// so that it can use EscapeSequenceParser and EscapseSequenceParser
+					// can callback to Edit/Erase line functionality of the TerminalView.
+
 					if (!cmd.mProcessed) {
 						using enum EscapeSequenceParser::CommandType;
 						if ((cmd.mType >= EraseDisplayAfterCursor) && (cmd.mType <= EraseLine))	{
@@ -529,43 +492,12 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 							mQueuedTerminalOutput.push(cmd.mOutput);
 						}
 					}
-					// This escape sequence requires more processing
 					
 				}
-
-
-				//// 8 bit char
-				//static struct cansid_state state = cansid_init();
-				//struct color_char ch = cansid_process(&state, *aValue);
-				//if (ch.ascii) {
-				//	auto pi = PaletteIndex::White;
-				//	if (ch.style == 0x0A) {
-				//		pi = PaletteIndex::Green;
-				//	}
-				//	//else if (ch.style == 0x0F) {
-				//	//	pi = PaletteIndex::Red;
-				//	//}
-				//	else if (ch.style == 0x0E) {
-				//		pi = PaletteIndex::Yellow;
-				//	}
-				//	//line.insert(line.begin() + cindex++, Glyph(*aValue, pi));
-				//	line.insert(line.begin() + termColI++, Glyph(ch.ascii, pi));
-				//}
-				//else if (state.control == state.CONTROL_CLEAR_LINE_REMAINDER) {
-				//	line.erase(line.begin() + termColI, line.end());
-				//	//aWhere.mColumn = -1;
-				//	//termColI = 0;
-				//}
-				//else {
-				//	line.insert(line.begin() + termColI++, Glyph(*aValue, PaletteIndex::BrightCyan));
-				//}
-
 
 				aValue++;
 			}
 
-			//++aWhere.mColumn;
-			//++termColI;
 		}
 
 		mTextChanged = true;

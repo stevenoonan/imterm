@@ -99,10 +99,6 @@ public:
 			mOutput(aOutput)
 		{}
 
-		//uint8_t getIdentifer() const { return mIdentifier; }
-		//CommandType getCommandType() const { return mType; }
-		//int getParameterCount() const { return mParameterCount; }
-
 		const uint8_t mIdentifier;
 		const CommandType mType;
 		const std::vector<int> mData;
@@ -178,24 +174,6 @@ private:
 	std::vector<int> mDataStaged;
 
 	ParseResult mParseResult;
-
-	//const std::map<uint8_t, Command> mCommands = []() {
-	//	using enum CommandType;
-	//	std::map<uint8_t, Command> commands = {
-	//		{'H', Command('H', MoveCursorToHome, 0)}
-	//	};
-	//	return commands;
-	//}();
-
-	//const std::map<uint8_t, CommandType> mCommands = []() {
-	//	using enum CommandType; 
-	//	std::map<uint8_t, CommandType> commands = {
-	//		{'H', MoveCursorToHome},
-	//		{}
-	//	};
-	//	
-	//	return commands;
-	//}();
 
 	void ConvertDataElementInProcessToStagedInt();
 };
