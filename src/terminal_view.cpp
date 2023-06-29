@@ -49,6 +49,7 @@ TerminalView::TerminalView()
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+	, mNewLineMode(NewLineMode::Strict)
 {
 	SetPalette(GetDarkPalette());
 	mLines.push_back(Line());
@@ -388,13 +389,19 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 		}
 		else if (*aValue == '\r')
 		{
+			if (mNewLineMode == NewLineMode::AddLfToCr) {
+				InsertLine(++mLinesI);
+			}
 			termColI = 0;
 			++aValue;
 		}
 		else if (*aValue == '\n')
 		{
-			// Insert a line but don't reset the column index
+			
 			InsertLine(++mLinesI);
+			if (mNewLineMode == NewLineMode::AddCrToLf) {
+				termColI = 0;
+			}
 			++termRowI;
 			++totalLines;
 			++aValue;

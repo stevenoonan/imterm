@@ -60,6 +60,12 @@ public:
 		Max
 	};
 
+	enum class NewLineMode {
+		Strict,
+		AddCrToLf,
+		AddLfToCr
+	};
+
 	enum class SelectionMode
 	{
 		Normal,
@@ -230,6 +236,9 @@ public:
 
 	PaletteIndex GetPaletteIndex(TerminalState aTermState);
 
+	inline NewLineMode GetNewLineMode() const { return mNewLineMode; }
+	inline void SetNewLineMode(NewLineMode aValue) { mNewLineMode = aValue; }
+
 private:
 	typedef std::vector<std::pair<std::regex, PaletteIndex>> RegexList;
 
@@ -316,4 +325,6 @@ private:
 
 	EscapeSequenceParser mAnsiEscSeqParser;
 	TerminalState mTermState;
+
+	NewLineMode mNewLineMode;
 };

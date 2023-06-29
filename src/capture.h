@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <chrono>
+#include <filesystem>
 
 using namespace std::chrono;
 using namespace std::literals;
@@ -18,6 +19,8 @@ namespace imterm {
     void CaptureWindowCreate(void);
 
     void PortSelectionWindow(ImGuiID id);
+
+    void Menu();
 
     template<typename T>
     class ComboDataItem {
@@ -64,7 +67,6 @@ namespace imterm {
             return _data;
         }
 
-
     };
 
     template<typename T>
@@ -78,13 +80,14 @@ namespace imterm {
         std::string _hidden_label;
         std::string _toml_id;
         ImGuiComboFlags _flags = 0;
+        float _pos_x_combo;
+        std::string _tool_tip;
 
     public:
 
-        ComboData(std::string label)
-            : _label(label), _hidden_label(std::string("##").append(label))
+        ComboData(std::string label, float pos_x_combo, std::string tool_tip = std::string())
+            : _label(label), _hidden_label(std::string("##").append(label)), _toml_id(label), _pos_x_combo(pos_x_combo), _tool_tip(tool_tip)
         {
-            _toml_id = _label;
             std::transform(_toml_id.begin(), _toml_id.end(), _toml_id.begin(), ::tolower);
             std::replace(_toml_id.begin(), _toml_id.end(), ' ', '_');
         }
@@ -129,6 +132,10 @@ namespace imterm {
             return _items[index];
         }
 
+        float get_pos_x_combo() const {
+            return _pos_x_combo;
+        }
+
         size_t size() const {
             return _items.size();
         }
@@ -139,6 +146,10 @@ namespace imterm {
 
         int get_selected_index() const {
             return _selected_index;
+        }
+
+        std::string get_tool_tip() const {
+            return _tool_tip;
         }
         
         void set_selected_index(size_t index) {
@@ -198,7 +209,7 @@ namespace imterm {
         }
 
         void put_selected_item(toml::table * tbl) {
-            tbl->insert(_toml_id, get_selected_item().get_display_str());
+            tbl->insert_or_assign(_toml_id, get_selected_item().get_display_str());
         }
 
         ComboDataItem<T>* get_selected_item_ptr(bool null_ok=false) {
@@ -253,6 +264,69 @@ namespace imterm {
 
         int get_flags() const {
             return _flags;
+        }
+
+    };
+
+    class CaptureSettings {
+
+        static inline const std::string _default_cfg_file_name = "imterm.toml";
+
+        std::string _cfg_file_name;
+        toml::table _table;
+
+        toml::table create_default_toml() {
+            return toml::table {
+                { "default", toml::table {
+                    { "serial", toml::table {
+                        {"serial_port", "COM1"},
+                        { "baud", "115200" },
+                        { "data_bits", "8" },
+                        { "stop_bits", "2" },
+                        { "parity", "none" },
+                        { "flow_control", "none" }
+                    }
+                    },
+                    { "input", toml::table {
+                            {"new_line_mode", "strict"}
+                        }
+                    }
+                }
+                },
+            };
+        }
+
+        void read() {
+            _table = toml::parse_file(_cfg_file_name);            
+        }
+
+        void write(toml::table table) {
+            std::ofstream cfg_stream(_cfg_file_name);
+            if (cfg_stream.is_open()) {
+                cfg_stream << table;
+                cfg_stream.close();
+            }
+        }
+
+    public:
+
+        CaptureSettings(std::string cfg_file_name = _default_cfg_file_name) : _cfg_file_name(cfg_file_name) {
+            if (!std::filesystem::exists(_cfg_file_name)) {
+                auto tbl = create_default_toml();
+                write(tbl);
+            }
+            read();
+        }
+
+        toml::node_view<toml::node> get_serial_settings() {
+            return _table["default"]["serial"];
+        }
+        toml::node_view<toml::node> get_input_settings() {
+            return _table["default"]["input"];
+        }
+
+        void write() {
+            write(_table);
         }
 
     };
