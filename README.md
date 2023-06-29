@@ -2,7 +2,7 @@
 Terminal with ANSI escape sequence support.
 
 Serial port is the only interface currently supported. It is a major work in 
-progress, *a lot* of cleanup and refactoring is currently needed. That being said,
+progress, a lot of cleanup and refactoring is currently needed. That being said,
 it currently accomplishes my initial goal of being compatiable with ESP32 console
 features (line editing, coloring, history, etc.).
 
