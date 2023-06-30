@@ -9,11 +9,13 @@
 #include <map>
 #include <regex>
 #include <queue>
+#include <chrono>
 
 #include "imgui.h"
 #include "coordinates.h"
 #include "escape_sequence_parser.h"
 #include "terminal_state.h"
+#include "vector_timed.h"
 
 class TerminalView
 {
@@ -109,7 +111,7 @@ public:
 		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex), mPreprocessor(false) {}
 	};
 
-	typedef std::vector<Glyph> Line;
+	typedef vector_timed<Glyph> Line;
 	typedef std::vector<Line> Lines;
 
 	struct RenderGeometry
