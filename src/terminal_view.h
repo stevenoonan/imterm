@@ -285,6 +285,8 @@ private:
 	void HandleMouseInputs();
 	void Render();
 
+	void InputGlyph(TerminalView::Line& line, int& termColI, PaletteIndex pi, uint8_t aValue);
+
 	float mLineSpacing;
 	Lines mLines;
 	EditorState mState;

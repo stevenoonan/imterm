@@ -297,6 +297,25 @@ int TerminalView::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aVa
 	return totalLines;
 }
 
+void TerminalView::InputGlyph(TerminalView::Line& aLine, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue) {
+
+	// Add spaces until the data structure size matches the current column index 
+	while (aLine.size() < aColumnIndex) {
+		aLine.push_back(Glyph(' ', PaletteIndex::Default));
+	}
+
+	if (aLine.size() == aColumnIndex) {
+		// Add a character
+		aLine.insert(aLine.begin() + aColumnIndex++, Glyph(aValue, aPaletteIndex));
+	}
+	else {
+		// Replace a character
+		aLine[aColumnIndex].mChar = aValue;
+		aLine[aColumnIndex].mColorIndex = aPaletteIndex;
+		aColumnIndex++;
+	}
+}
+
 
 int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 {
@@ -305,7 +324,7 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 	 * the terminal 'screen' / buffer.
 	 * 
 	 * The terminal cursor will be a coordinate (0,0) representing the top left
-	 * of the terminal to (x,y) representing the bottom left. The maximum x and
+	 * of the terminal to (x,y) representing the bottom right. The maximum x and
 	 * y will be the total columns and rows viewable without scrolling the GUI 
 	 * control. This will be cacluated each frame, so if the GUI is resized then
 	 * the next frame will have a different terminal size.
@@ -411,47 +430,18 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 
 			auto& line = mLines[mLinesI];
 			auto d = UTF8CharLength(*aValue);
+			auto pi = GetPaletteIndex(mTermState);
 			if (d > 1) {
-				auto pi = GetPaletteIndex(mTermState);
 				while (d-- > 0 && *aValue != '\0') {
-
-					// TODO: Functionalize repeated code `while (mLines[mLinesI].size() < termColI)...`
-
-					while (mLines[mLinesI].size() < termColI) {
-						mLines[mLinesI].push_back(Glyph(' ', PaletteIndex::Default));
-					}
-
-					if (mLines[mLinesI].size() == termColI) {
-						line.insert(line.begin() + termColI++, Glyph(*aValue++, pi));
-					}
-					else {
-						line[termColI].mChar = *aValue++;
-						line[termColI].mColorIndex = pi;
-						termColI++;
-					}
+					InputGlyph(line, termColI, pi, *aValue++);
 				}
 			}
 			else {
 
 				const auto escSeq = mAnsiEscSeqParser.Parse(*aValue);
-				auto pi = GetPaletteIndex(mTermState);
 
 				if (escSeq.mOutputChar) {
-
-					// TODO: Functionalize repeated code `while (mLines[mLinesI].size() < termColI)...`
-
-					while (mLines[mLinesI].size() < termColI) {
-						mLines[mLinesI].push_back(Glyph(' ', PaletteIndex::Default));
-					}
-
-					if (mLines[mLinesI].size() == termColI) {
-						line.insert(line.begin() + termColI++, Glyph(escSeq.mOutputChar, pi));
-					}
-					else {
-						line[termColI].mChar = escSeq.mOutputChar;
-						line[termColI].mColorIndex = pi;
-						termColI++;
-					}
+					InputGlyph(line, termColI, pi, escSeq.mOutputChar);
 				}
 				else if ((escSeq.mStage == EscapeSequenceParser::Stage::Inactive) && (escSeq.mError == EscapeSequenceParser::Error::None)) {
 					auto cmd = mTermState.Update(escSeq);
