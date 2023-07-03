@@ -10,6 +10,7 @@
 #include "escape_sequence_parser.h"
 #include "coordinates.h"
 #include "beep.h"
+#include "terminal_data.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h" // for imGui::GetCurrentWindow()
@@ -52,7 +53,7 @@ TerminalView::TerminalView()
 	, mNewLineMode(NewLineMode::Strict)
 {
 	SetPalette(GetDarkPalette());
-	mLines.push_back(Line());
+	mLines.push_back(TerminalData::Line());
 }
 
 TerminalView::~TerminalView()
@@ -134,7 +135,7 @@ Coordinates TerminalView::SanitizeCoordinates(const Coordinates & aValue) const
 
 // https://en.wikipedia.org/wiki/UTF-8
 // We assume that the char is a standalone character (<128) or a leading byte of an UTF-8 code sequence (non-10xxxxxx code)
-static int UTF8CharLength(TerminalView::Char c)
+static int UTF8CharLength(TerminalData::Char c)
 {
 	if ((c & 0xFE) == 0xFC)
 		return 6;
@@ -287,7 +288,7 @@ int TerminalView::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aVa
 			auto& line = mLines[aWhere.mLine];
 			auto d = UTF8CharLength(*aValue);
 			while (d-- > 0 && *aValue != '\0')
-				line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
+				line.insert(line.begin() + cindex++, TerminalData::Glyph(*aValue++, TerminalData::PaletteIndex::Default));
 			++aWhere.mColumn;
 		}
 
@@ -297,16 +298,16 @@ int TerminalView::InsertTextAt(Coordinates& /* inout */ aWhere, const char * aVa
 	return totalLines;
 }
 
-void TerminalView::InputGlyph(TerminalView::Line& aLine, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue) {
+void TerminalView::InputGlyph(TerminalData::Line& aLine, int& aColumnIndex, TerminalData::PaletteIndex aPaletteIndex, uint8_t aValue) {
 
 	// Add spaces until the data structure size matches the current column index 
 	while (aLine.size() < aColumnIndex) {
-		aLine.push_back(Glyph(' ', PaletteIndex::Default));
+		aLine.push_back(TerminalData::Glyph(' ', TerminalData::PaletteIndex::Default));
 	}
 
 	if (aLine.size() == aColumnIndex) {
 		// Add a character
-		aLine.insert(aLine.begin() + aColumnIndex++, Glyph(aValue, aPaletteIndex));
+		aLine.insert(aLine.begin() + aColumnIndex++, TerminalData::Glyph(aValue, aPaletteIndex));
 	}
 	else {
 		// Replace a character
@@ -378,7 +379,7 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 		// Terminal row is greater than the total number lines we have. This can
 		// occur at the start of running.
 		while (termRowI >= mLines.size()) {
-			mLines.push_back(Line());
+			mLines.push_back(TerminalData::Line());
 		}
 
 		// Convert termRowI to mLinesI
@@ -570,7 +571,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 	while (cindex > 0 && isspace(line[cindex].mChar))
 		--cindex;
 
-	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
 	while (cindex > 0)
 	{
 		auto c = line[cindex].mChar;
@@ -581,7 +582,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 				cindex++;
 				break;
 			}
-			if (cstart != (PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
+			if (cstart != (TerminalData::PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
 				break;
 		}
 		--cindex;
@@ -602,12 +603,12 @@ Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
 		return at;
 
 	bool prevspace = (bool)isspace(line[cindex].mChar);
-	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
 	while (cindex < (int)line.size())
 	{
 		auto c = line[cindex].mChar;
 		auto d = UTF8CharLength(c);
-		if (cstart != (PaletteIndex)line[cindex].mColorIndex)
+		if (cstart != (TerminalData::PaletteIndex)line[cindex].mColorIndex)
 			break;
 
 		if (prevspace != !!isspace(c))
@@ -777,11 +778,11 @@ void TerminalView::RemoveLine(int aIndex)
 	mTextChanged = true;
 }
 
-TerminalView::Line& TerminalView::InsertLine(int aIndex)
+TerminalData::Line& TerminalView::InsertLine(int aIndex)
 {
 	assert(!mReadOnly);
 
-	auto& result = *mLines.insert(mLines.begin() + aIndex, Line());
+	auto& result = *mLines.insert(mLines.begin() + aIndex, TerminalData::Line());
 
 	return result;
 }
@@ -808,15 +809,15 @@ std::string TerminalView::GetWordAt(const Coordinates & aCoords) const
 	return r;
 }
 
-ImU32 TerminalView::GetGlyphColor(const Glyph & aGlyph) const
+ImU32 TerminalView::GetGlyphColor(const TerminalData::Glyph & aGlyph) const
 {
 	if (!mColorizerEnabled)
-		return mPalette[(int)PaletteIndex::Default];
+		return mPalette[(int)TerminalData::PaletteIndex::Default];
 
 	auto const color = mPalette[(int)aGlyph.mColorIndex];
 	if (aGlyph.mPreprocessor)
 	{
-		const auto ppcolor = mPalette[(int)PaletteIndex::Preprocessor];
+		const auto ppcolor = mPalette[(int)TerminalData::PaletteIndex::Preprocessor];
 		const int c0 = ((ppcolor & 0xff) + (color & 0xff)) / 2;
 		const int c1 = (((ppcolor >> 8) & 0xff) + ((color >> 8) & 0xff)) / 2;
 		const int c2 = (((ppcolor >> 16) & 0xff) + ((color >> 16) & 0xff)) / 2;
@@ -1063,7 +1064,7 @@ void TerminalView::Render()
 	mCharAdvance = ImVec2(fontSize, ImGui::GetTextLineHeightWithSpacing() * mLineSpacing);
 
 	/* Update palette with the current alpha from style */
-	for (int i = 0; i < (int)PaletteIndex::Max; ++i)
+	for (int i = 0; i < (int)TerminalData::PaletteIndex::Max; ++i)
 	{
 		auto color = ImGui::ColorConvertU32ToFloat4(mPaletteBase[i]);
 		color.w *= ImGui::GetStyle().Alpha;
@@ -1141,7 +1142,7 @@ void TerminalView::Render()
 			{
 				ImVec2 vstart(lineStartScreenPos.x + mTextStart + sstart, lineStartScreenPos.y);
 				ImVec2 vend(lineStartScreenPos.x + mTextStart + ssend, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
+				drawList->AddRectFilled(vstart, vend, mPalette[(int)TerminalData::PaletteIndex::Selection]);
 			}
 
 			// Draw breakpoints
@@ -1150,7 +1151,7 @@ void TerminalView::Render()
 			if (mBreakpoints.count(lineNo + 1) != 0)
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::Breakpoint]);
+				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::Breakpoint]);
 			}
 
 			// Draw error markers
@@ -1158,7 +1159,7 @@ void TerminalView::Render()
 			if (errorIt != mErrorMarkers.end())
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::ErrorMarker]);
+				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::ErrorMarker]);
 
 				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
 				{
@@ -1180,7 +1181,7 @@ void TerminalView::Render()
 			snprintf(buf, buf_length, "%d  [%02d:%02d:%02d]  ", lineNo + 1, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
 
 			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], buf);
+			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)TerminalData::PaletteIndex::LineNumber], buf);
 
 			mState.mCursorPosition = mTermState.getPositionRelative(mLines.size());
 
@@ -1192,8 +1193,8 @@ void TerminalView::Render()
 				if (!HasSelection())
 				{
 					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y);
-					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? PaletteIndex::CurrentLineFill : PaletteIndex::CurrentLineFillInactive)]);
-					drawList->AddRect(start, end, mPalette[(int)PaletteIndex::CurrentLineEdge], 1.0f);
+					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? TerminalData::PaletteIndex::CurrentLineFill : TerminalData::PaletteIndex::CurrentLineFillInactive)]);
+					drawList->AddRect(start, end, mPalette[(int)TerminalData::PaletteIndex::CurrentLineEdge], 1.0f);
 				}
 
 				// Render the cursor
@@ -1225,7 +1226,7 @@ void TerminalView::Render()
 						}
 						ImVec2 cstart(textScreenPos.x + cx, lineStartScreenPos.y);
 						ImVec2 cend(textScreenPos.x + cx + width, lineStartScreenPos.y + mCharAdvance.y);
-						drawList->AddRectFilled(cstart, cend, mPalette[(int)PaletteIndex::Cursor]);
+						drawList->AddRectFilled(cstart, cend, mPalette[(int)TerminalData::TerminalData::PaletteIndex::Cursor]);
 						if (elapsed > 800)
 							mStartTime = timeEnd;
 					}
@@ -1233,7 +1234,7 @@ void TerminalView::Render()
 			}
 
 			// Render colorized text
-			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
+			auto prevColor = line.empty() ? mPalette[(int)TerminalData::TerminalData::PaletteIndex::Default] : GetGlyphColor(line[0]);
 			ImVec2 bufferOffset;
 
 			for (int i = 0; i < line.size();)
@@ -1324,7 +1325,7 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	mTextChanged = false;
 	mCursorPositionChanged = false;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)TerminalData::PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
 		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
@@ -1355,7 +1356,7 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 void TerminalView::SetText(const std::string & aText)
 {
 	mLines.clear();
-	mLines.emplace_back(Line());
+	mLines.emplace_back(TerminalData::Line());
 	for (auto chr : aText)
 	{
 		if (chr == '\r')
@@ -1363,10 +1364,10 @@ void TerminalView::SetText(const std::string & aText)
 			// ignore the carriage return character
 		}
 		else if (chr == '\n')
-			mLines.emplace_back(Line());
+			mLines.emplace_back(TerminalData::Line());
 		else
 		{
-			mLines.back().emplace_back(Glyph(chr, PaletteIndex::Default));
+			mLines.back().emplace_back(TerminalData::Glyph(chr, TerminalData::PaletteIndex::Default));
 		}
 	}
 
@@ -1381,7 +1382,7 @@ void TerminalView::SetTextLines(const std::vector<std::string> & aLines)
 
 	if (aLines.empty())
 	{
-		mLines.emplace_back(Line());
+		mLines.emplace_back(TerminalData::Line());
 	}
 	else
 	{
@@ -1393,7 +1394,7 @@ void TerminalView::SetTextLines(const std::vector<std::string> & aLines)
 
 			mLines[i].reserve(aLine.size());
 			for (size_t j = 0; j < aLine.size(); ++j)
-				mLines[i].emplace_back(Glyph(aLine[j], PaletteIndex::Default));
+				mLines[i].emplace_back(TerminalData::Glyph(aLine[j], TerminalData::PaletteIndex::Default));
 		}
 	}
 
@@ -1454,7 +1455,7 @@ void TerminalView::EnterCharacter(ImWchar aChar, bool aShift)
 				}
 				else
 				{
-					line.insert(line.begin(), Glyph('\t', TerminalView::PaletteIndex::Background));
+					line.insert(line.begin(), TerminalData::Glyph('\t', TerminalData::PaletteIndex::Background));
 					modified = true;
 				}
 			}
@@ -1527,7 +1528,7 @@ void TerminalView::EnterCharacter(ImWchar aChar, bool aShift)
 			}
 
 			for (auto p = buf; *p != '\0'; p++, ++cindex)
-				line.insert(line.begin() + cindex, Glyph(*p, PaletteIndex::Default));
+				line.insert(line.begin() + cindex, TerminalData::Glyph(*p, TerminalData::PaletteIndex::Default));
 
 			SetCursorPosition(Coordinates(coord.mLine, GetCharacterColumn(coord.mLine, cindex)));
 		}
@@ -1667,7 +1668,7 @@ void TerminalView::AppendText(const char* aValue)
 
 void TerminalView::AppendLine()
 {
-	mLines.push_back(Line());
+	mLines.push_back(TerminalData::Line());
 }
 
 void TerminalView::SetCursorToEnd()
@@ -2305,7 +2306,7 @@ bool TerminalView::TerminalOutputAvailable()
 	return !mQueuedTerminalOutput.empty();
 }
 
-TerminalView::PaletteIndex TerminalView::GetPaletteIndex(TerminalState aTermState)
+TerminalData::PaletteIndex TerminalView::GetPaletteIndex(TerminalState aTermState)
 {
 	using enum TerminalGraphicsState::Flags;
 
@@ -2318,31 +2319,31 @@ TerminalView::PaletteIndex TerminalView::GetPaletteIndex(TerminalState aTermStat
 		icolor = (int)aTermState.getForegroundColor();
 	}
 
-	TerminalView::PaletteIndex pal = TerminalView::PaletteIndex::Default;
+	TerminalData::PaletteIndex pal = TerminalData::PaletteIndex::Default;
 
 	if (icolor & (int)BlackFg) {
-		pal = TerminalView::PaletteIndex::Black;
+		pal = TerminalData::PaletteIndex::Black;
 	}
 	else if (icolor & (int)RedFg) {
-		pal = TerminalView::PaletteIndex::Red;
+		pal = TerminalData::PaletteIndex::Red;
 	}
 	else if (icolor & (int)GreenFg) {
-		pal = TerminalView::PaletteIndex::Green;
+		pal = TerminalData::PaletteIndex::Green;
 	}
 	else if (icolor & (int)YellowFg) {
-		pal = TerminalView::PaletteIndex::Yellow;
+		pal = TerminalData::PaletteIndex::Yellow;
 	}
 	else if (icolor & (int)BlueFg) {
-		pal = TerminalView::PaletteIndex::Blue;
+		pal = TerminalData::PaletteIndex::Blue;
 	}
 	else if (icolor & (int)MagentaFg) {
-		pal = TerminalView::PaletteIndex::Magenta;
+		pal = TerminalData::PaletteIndex::Magenta;
 	}
 	else if (icolor & (int)CyanFg) {
-		pal = TerminalView::PaletteIndex::Cyan;
+		pal = TerminalData::PaletteIndex::Cyan;
 	}
 	else if (icolor & (int)WhiteFg) {
-		pal = TerminalView::PaletteIndex::White;
+		pal = TerminalData::PaletteIndex::White;
 	}
 
 	return pal;

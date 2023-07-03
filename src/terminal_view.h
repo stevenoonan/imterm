@@ -15,52 +15,13 @@
 #include "coordinates.h"
 #include "escape_sequence_parser.h"
 #include "terminal_state.h"
+#include "terminal_data.h"
 #include "vector_timed.h"
 
 class TerminalView
 {
 public:
-	enum class PaletteIndex
-	{
-		Default,
-		Keyword,
-		Number,
-		String,
-		CharLiteral,
-		Punctuation,
-		Preprocessor,
-		Identifier,
-		KnownIdentifier,
-		PreprocIdentifier,
-		Comment,
-		MultiLineComment,
-		Background,
-		Cursor,
-		Selection,
-		ErrorMarker,
-		Breakpoint,
-		LineNumber,
-		CurrentLineFill,
-		CurrentLineFillInactive,
-		CurrentLineEdge,
-		Black,
-		Red,
-		Green,
-		Yellow,
-		Blue,
-		Magenta,
-		Cyan,
-		White,
-		BrightBlack,
-		BrightRed,
-		BrightGreen,
-		BrightYellow,
-		BrightBlue,
-		BrightMagenta,
-		BrightCyan,
-		BrightWhite,
-		Max
-	};
+	
 
 	enum class NewLineMode {
 		Strict,
@@ -98,21 +59,8 @@ public:
 	typedef std::unordered_set<std::string> Keywords;
 	typedef std::map<int, std::string> ErrorMarkers;
 	typedef std::unordered_set<int> Breakpoints;
-	typedef std::array<ImU32, (unsigned)PaletteIndex::Max> Palette;
-	typedef uint8_t Char;
-
-	struct Glyph
-	{
-		Char mChar;
-		PaletteIndex mColorIndex = PaletteIndex::Default;
-
-		bool mPreprocessor : 1;
-
-		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex), mPreprocessor(false) {}
-	};
-
-	typedef vector_timed<Glyph> Line;
-	typedef std::vector<Line> Lines;
+	typedef std::array<ImU32, (unsigned)TerminalData::PaletteIndex::Max> Palette;
+	
 
 	struct RenderGeometry
 	{
@@ -236,13 +184,13 @@ public:
 	std::vector<uint8_t> GetTerminalOutput();
 	bool TerminalOutputAvailable();
 
-	PaletteIndex GetPaletteIndex(TerminalState aTermState);
+	TerminalData::PaletteIndex GetPaletteIndex(TerminalState aTermState);
 
 	inline NewLineMode GetNewLineMode() const { return mNewLineMode; }
 	inline void SetNewLineMode(NewLineMode aValue) { mNewLineMode = aValue; }
 
 private:
-	typedef std::vector<std::pair<std::regex, PaletteIndex>> RegexList;
+	typedef std::vector<std::pair<std::regex, TerminalData::PaletteIndex>> RegexList;
 
 	struct EditorState
 	{
@@ -273,22 +221,22 @@ private:
 	bool IsOnWordBoundary(const Coordinates& aAt) const;
 	void RemoveLine(int aStart, int aEnd);
 	void RemoveLine(int aIndex);
-	Line& InsertLine(int aIndex);
+	TerminalData::Line& InsertLine(int aIndex);
 	void EnterCharacter(ImWchar aChar, bool aShift);
 	void Backspace();
 	void DeleteSelection();
 	std::string GetWordUnderCursor() const;
 	std::string GetWordAt(const Coordinates& aCoords) const;
-	ImU32 GetGlyphColor(const Glyph& aGlyph) const;
+	ImU32 GetGlyphColor(const TerminalData::Glyph& aGlyph) const;
 
 	void HandleKeyboardInputs();
 	void HandleMouseInputs();
 	void Render();
 
-	void InputGlyph(TerminalView::Line& line, int& termColI, PaletteIndex pi, uint8_t aValue);
+	void InputGlyph(TerminalData::Line& line, int& termColI, TerminalData::PaletteIndex pi, uint8_t aValue);
 
 	float mLineSpacing;
-	Lines mLines;
+	TerminalData::Lines mLines;
 	EditorState mState;
 
 	int mTabSize;
