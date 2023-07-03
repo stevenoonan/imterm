@@ -28,7 +28,10 @@ namespace imterm {
     static bool serial_init = false;
     static Serial * serial;
     static std::string serial_name = "[Not Connected]";
-    static TerminalView terminal;
+    
+    static TerminalData term_data;
+    static TerminalState term_state(term_data);
+    static TerminalView term_view(term_data, term_state);
     static auto settings = CaptureSettings();
 
     void CaptureWindowCreate(void) {
@@ -37,7 +40,7 @@ namespace imterm {
 
         if (!capture_window_init) {
             capture_window_init = true;
-            terminal.SetKeyboardInputAllowed(false);
+            term_view.SetKeyboardInputAllowed(false);
         }
 
         
@@ -49,13 +52,13 @@ namespace imterm {
         Menu();
         //if (serial_init) ImGui::SetNextWindowFocus();
 #endif
-        terminal.Render("TerminalView");
+        term_view.Render("TerminalView");
         ImGui::End();
 
         if (serial_init) {
 
-            while (terminal.KeyboardInputAvailable()) {
-                ImWchar keyboard_input_wide = terminal.GetKeyboardInput();
+            while (term_view.KeyboardInputAvailable()) {
+                ImWchar keyboard_input_wide = term_view.GetKeyboardInput();
                 uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
                 serial->write(&keyboard_input, 1);
             }
@@ -66,14 +69,14 @@ namespace imterm {
  
                 std::vector<uint8_t> buffer(available);
                 serial->read(buffer, available);
-                terminal.TerminalInput(buffer);
+                term_view.TerminalInput(buffer);
 
-                while (terminal.TerminalOutputAvailable()) {
-                    auto output = terminal.GetTerminalOutput();
+                while (term_state.TerminalOutputAvailable()) {
+                    auto output = term_state.GetTerminalOutput();
                     serial->write(output);
                 }
               
-                terminal.SetCursorToEnd();
+                term_view.SetCursorToEnd();
             }
         }
         else {
@@ -351,7 +354,7 @@ namespace imterm {
 
                         settings.write();
 
-                        terminal.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
+                        term_view.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
 
                         show_port_selection = false;
                         ImGui::CloseCurrentPopup();

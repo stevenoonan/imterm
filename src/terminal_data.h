@@ -68,5 +68,7 @@ public:
 
 	typedef vector_timed<Glyph> Line;
 	typedef std::vector<Line> Lines;
+
+	TerminalData::Lines mLines;
 };
 

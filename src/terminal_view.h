@@ -90,7 +90,7 @@ public:
 		ImVec2 mTextScreenPos;
 	};
 
-	TerminalView();
+	TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState);
 	~TerminalView();
 
 	const Palette& GetPalette() const { return mPaletteBase; }
@@ -181,9 +181,6 @@ public:
 	bool KeyboardInputAvailable();
 	int TerminalInput(const std::vector<uint8_t>& aVector);
 
-	std::vector<uint8_t> GetTerminalOutput();
-	bool TerminalOutputAvailable();
-
 	TerminalData::PaletteIndex GetPaletteIndex(TerminalState aTermState);
 
 	inline NewLineMode GetNewLineMode() const { return mNewLineMode; }
@@ -236,7 +233,9 @@ private:
 	void InputGlyph(TerminalData::Line& line, int& termColI, TerminalData::PaletteIndex pi, uint8_t aValue);
 
 	float mLineSpacing;
-	TerminalData::Lines mLines;
+	TerminalData::Lines& mLines;
+	TerminalData& mData;
+	
 	EditorState mState;
 
 	int mTabSize;
@@ -273,10 +272,9 @@ private:
 	RenderGeometry mLastRenderGeometry;
 	std::queue<ImVector<ImWchar>> mQueuedInputQueueCharacters;
 	std::queue<ImWchar> mInputQueueCharacters;
-	std::queue<std::vector<uint8_t>> mQueuedTerminalOutput;
 
 	EscapeSequenceParser mAnsiEscSeqParser;
-	TerminalState mTermState;
+	TerminalState& mTermState;
 
 	NewLineMode mNewLineMode;
 };

@@ -77,36 +77,6 @@ public:
 		SetGraphics,              // ESC[{..};{..}m           Background color, foreground, color, bold, underline, etc.
 	};
 
-	class Command {
-	public:
-
-		Command(
-			bool aProcessed,
-			uint8_t aIdentifier, 
-			CommandType aType, 
-			std::vector<int> aData, 
-			Coordinates aEraseBegin, 
-			Coordinates aEraseEnd,
-			std::vector<uint8_t> aOutput
-		) :
-
-			mProcessed(aProcessed),
-			mIdentifier(aIdentifier), 
-			mType(aType), 
-			mData(aData), 
-			mEraseBegin(aEraseBegin),
-			mEraseEnd(aEraseEnd),
-			mOutput(aOutput)
-		{}
-
-		const uint8_t mIdentifier;
-		const CommandType mType;
-		const std::vector<int> mData;
-		const Coordinates mEraseBegin;
-		const Coordinates mEraseEnd;
-		const std::vector<uint8_t> mOutput;
-		bool mProcessed;
-	};
 	
 	enum class GraphicsCommands {
 		Reset = 0,

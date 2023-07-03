@@ -1,6 +1,8 @@
 #pragma once
 
 #include <assert.h>
+#include <queue>
+#include "terminal_data.h"
 #include "escape_sequence_parser.h"
 #include "coordinates.h"
 
@@ -76,10 +78,10 @@ class TerminalState {
 
 public:
 
-	TerminalState();
+	TerminalState(TerminalData& aTerminalData);
 	~TerminalState();
 
-	EscapeSequenceParser::Command Update(EscapeSequenceParser::ParseResult aParseResult);
+	void Update(EscapeSequenceParser::ParseResult aParseResult);
 	void SetBounds(Coordinates aBounds);
 
 
@@ -128,6 +130,8 @@ public:
 	bool IsHidden() const { return mGraphics.IsHidden(); }
 	bool IsStrikethrough() const { return mGraphics.IsStrikethrough(); }
 
+	std::vector<uint8_t> GetTerminalOutput();
+	bool TerminalOutputAvailable();
 
 private:
 
@@ -139,6 +143,8 @@ private:
 
 	Coordinates mSavedCursorPos;
 	TerminalGraphicsState mGraphics;
+	TerminalData& mTerminalData;
 
+	std::queue<std::vector<uint8_t>> mQueuedTerminalOutput;
 
 };

@@ -76,7 +76,7 @@ uint32_t TerminalGraphicsState::Update(const std::vector<int> &aCommandData)
     return mState;
 }
 
-TerminalState::TerminalState()
+TerminalState::TerminalState(TerminalData& aTerminalData): mTerminalData(aTerminalData)
 {
 }
 
@@ -84,7 +84,7 @@ TerminalState::~TerminalState()
 {
 }
 
-EscapeSequenceParser::Command TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
+void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
 {
 
     using enum EscapeSequenceParser::CommandType;
@@ -267,15 +267,44 @@ EscapeSequenceParser::Command TerminalState::Update(EscapeSequenceParser::ParseR
         processed = true;
     }
 
-    return EscapeSequenceParser::Command(
-        processed,
-        aSeq.mIdentifier, 
-        type, 
-        aSeq.mCommandData, 
-        eraseBegin,
-        eraseEnd,
-        output
-    );
+    if ((type >= EraseDisplayAfterCursor) && (type <= EraseLine)) {
+        Coordinates begin = eraseBegin;
+        Coordinates end = eraseEnd;
+
+        // Begin and end are in localized Terminal coordinates, not global mLines
+        // The last line of the terminal is the max mLine
+        begin = getPositionRelative(mTerminalData.mLines.size(), begin);
+        end = getPositionRelative(mTerminalData.mLines.size(), end);
+
+        while (begin < end) {
+            auto& eraseLine = mTerminalData.mLines[begin.mLine];
+            if (begin.mLine < end.mLine) {
+                eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
+                begin.mLine++;
+                begin.mColumn = 0;
+            }
+            else {
+                // begin and end are on the same line
+                if (end.mColumn == GetBounds().mColumn) {
+                    // the end of the erase is the end of the line, so we can erase
+                    eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
+                }
+                else {
+                    // end of the erase is in the middle of the last line, replace printables with spaces
+                    for (auto it = eraseLine.begin() + begin.mColumn; it != eraseLine.begin() + end.mColumn; ++it) {
+                        (*it).mChar = ' ';
+                    }
+                }
+                begin.mColumn = end.mColumn;
+            }
+        }
+
+        processed = true;
+    }
+
+    if (output.size() > 0) {
+        mQueuedTerminalOutput.push(std::move(output));
+    }
 }
 
 void TerminalState::SetBounds(Coordinates aBounds)
@@ -293,4 +322,21 @@ void TerminalState::SanitzeCursorPosition()
     if (mCursorPos.mLine > mBounds.mLine) {
         mCursorPos.mLine = mBounds.mLine;
     }
+}
+
+std::vector<uint8_t> TerminalState::GetTerminalOutput()
+{
+    if (mQueuedTerminalOutput.empty()) {
+        throw std::underflow_error("No terminal output to get. Check TerminalOutputAvailable() before calling.");
+    }
+    else {
+        auto item = mQueuedTerminalOutput.front();
+        mQueuedTerminalOutput.pop();
+        return item;
+    }
+}
+
+bool TerminalState::TerminalOutputAvailable()
+{
+    return !mQueuedTerminalOutput.empty();
 }

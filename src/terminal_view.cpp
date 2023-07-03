@@ -28,7 +28,7 @@ bool equals(InputIt1 first1, InputIt1 last1,
 	return first1 == last1 && first2 == last2;
 }
 
-TerminalView::TerminalView()
+TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState)
 	: mLineSpacing(1.0f)
 	, mTabSize(4)
 	, mOverwrite(false)
@@ -51,6 +51,9 @@ TerminalView::TerminalView()
 	, mShowWhitespaces(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 	, mNewLineMode(NewLineMode::Strict)
+	, mData(aTerminalData)
+	, mLines(aTerminalData.mLines)
+	, mTermState(aTerminalState)
 {
 	SetPalette(GetDarkPalette());
 	mLines.push_back(TerminalData::Line());
@@ -445,51 +448,7 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 					InputGlyph(line, termColI, pi, escSeq.mOutputChar);
 				}
 				else if ((escSeq.mStage == EscapeSequenceParser::Stage::Inactive) && (escSeq.mError == EscapeSequenceParser::Error::None)) {
-					auto cmd = mTermState.Update(escSeq);
-					
-					// TODO: Use dependency injection when creating TerminalState
-					// so that it can use EscapeSequenceParser and EscapseSequenceParser
-					// can callback to Edit/Erase line functionality of the TerminalView.
-
-					if (!cmd.mProcessed) {
-						using enum EscapeSequenceParser::CommandType;
-						if ((cmd.mType >= EraseDisplayAfterCursor) && (cmd.mType <= EraseLine))	{
-							Coordinates begin = cmd.mEraseBegin;
-							Coordinates end = cmd.mEraseEnd;
-
-							// Begin and end are in localized Terminal coordinates, not global mLines
-							// The last line of the terminal is the max mLine
-							begin = mTermState.getPositionRelative(mLines.size(), begin);
-							end = mTermState.getPositionRelative(mLines.size(), end);
-
-							while (begin < end) {
-								auto& eraseLine = mLines[begin.mLine];
-								if (begin.mLine < end.mLine) {
-									eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
-									begin.mLine++;
-									begin.mColumn = 0;
-								}
-								else {
-									// begin and end are on the same line
-									if (end.mColumn == mTermState.GetBounds().mColumn) {
-										// the end of the erase is the end of the line, so we can erase
-										eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
-									}
-									else {
-										// end of the erase is in the middle of the last line, replace printables with spaces
-										for (auto it = eraseLine.begin() + begin.mColumn; it != eraseLine.begin() + end.mColumn; ++it) {
-											(*it).mChar = ' '; // = Glyph(' ', PaletteIndex::Default);
-										}
-									}
-									begin.mColumn = end.mColumn;
-								}
-							}
-						}
-
-						if (!cmd.mOutput.empty()) {
-							mQueuedTerminalOutput.push(cmd.mOutput);
-						}
-					}
+					mTermState.Update(escSeq);
 					
 				}
 
@@ -2287,23 +2246,6 @@ const TerminalView::Palette & TerminalView::GetRetroBluePalette()
 			0xffffffff  // Bright White   ANSI FG=97 BG=107
 		} };
 	return p;
-}
-
-std::vector<uint8_t> TerminalView::GetTerminalOutput()
-{
-	if (mQueuedTerminalOutput.empty()) {
-		throw std::underflow_error("No terminal output to get. Check TerminalOutputAvailable() before calling.");
-	}
-	else {
-		auto item = mQueuedTerminalOutput.front();
-		mQueuedTerminalOutput.pop();
-		return item;
-	}
-}
-
-bool TerminalView::TerminalOutputAvailable()
-{
-	return !mQueuedTerminalOutput.empty();
 }
 
 TerminalData::PaletteIndex TerminalView::GetPaletteIndex(TerminalState aTermState)
