@@ -84,6 +84,14 @@ public:
 	void Update(EscapeSequenceParser::ParseResult aParseResult);
 	void SetBounds(Coordinates aBounds);
 
+	int Input(const std::vector<uint8_t>& aVector);
+
+	enum class NewLineMode {
+		Strict,
+		AddCrToLf,
+		AddLfToCr
+	};
+
 	const Coordinates& GetBounds()
 	{
 		return mBounds;
@@ -132,6 +140,11 @@ public:
 	std::vector<uint8_t> GetTerminalOutput();
 	bool TerminalOutputAvailable();
 
+	inline NewLineMode GetNewLineMode() const { return mNewLineMode; }
+	inline void SetNewLineMode(NewLineMode aValue) { mNewLineMode = aValue; }
+
+	TerminalData::PaletteIndex GetPaletteIndex();
+
 private:
 
 	void SanitzeCursorPosition();
@@ -145,5 +158,9 @@ private:
 	TerminalData& mTerminalData;
 
 	std::queue<std::vector<uint8_t>> mQueuedTerminalOutput;
+
+	NewLineMode mNewLineMode;
+
+	EscapeSequenceParser mAnsiEscSeqParser;
 
 };

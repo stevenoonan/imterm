@@ -69,7 +69,7 @@ namespace imterm {
  
                 std::vector<uint8_t> buffer(available);
                 serial->read(buffer, available);
-                term_view.TerminalInput(buffer);
+                term_state.Input(buffer);
 
                 while (term_state.TerminalOutputAvailable()) {
                     auto output = term_state.GetTerminalOutput();
@@ -171,7 +171,7 @@ namespace imterm {
         static ComboData<flowcontrol_t> cbo_flow_control_data("Flow control", input_x_offset);
         static char baud_text[128] = "115200";
 
-        static ComboData<TerminalView::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, 
+        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, 
             "A carriage return (CR) and line feed (LF) is needed\n"
             "for each new line of data. If the input data only\n"
             "only contains one or the other, select the mode\n"
@@ -255,16 +255,16 @@ namespace imterm {
                 flow_control_items.push_back(ComboDataItem<flowcontrol_t>("Software", true, flowcontrol_values[2]));
                 cbo_flow_control_data.set_items(flow_control_items);
 
-                static TerminalView::NewLineMode new_line_mode_values[] = {
-                    TerminalView::NewLineMode::Strict,
-                    TerminalView::NewLineMode::AddCrToLf,
-                    TerminalView::NewLineMode::AddLfToCr
+                static TerminalState::NewLineMode new_line_mode_values[] = {
+                    TerminalState::NewLineMode::Strict,
+                    TerminalState::NewLineMode::AddCrToLf,
+                    TerminalState::NewLineMode::AddLfToCr
                 };
 
-                std::vector<ComboDataItem<TerminalView::NewLineMode>> new_line_mode_items;
-                new_line_mode_items.push_back(ComboDataItem<TerminalView::NewLineMode>("Strict", true, new_line_mode_values[0]));
-                new_line_mode_items.push_back(ComboDataItem<TerminalView::NewLineMode>("Add CR to LF", false, new_line_mode_values[1]));
-                new_line_mode_items.push_back(ComboDataItem<TerminalView::NewLineMode>("Add LF to CR", true, new_line_mode_values[2]));
+                std::vector<ComboDataItem<TerminalState::NewLineMode>> new_line_mode_items;
+                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Strict", true, new_line_mode_values[0]));
+                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Add CR to LF", false, new_line_mode_values[1]));
+                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Add LF to CR", true, new_line_mode_values[2]));
                 cbo_new_line_mode_data.set_items(new_line_mode_items);
                 
                 auto serial_node = settings.get_serial_settings();
@@ -354,7 +354,7 @@ namespace imterm {
 
                         settings.write();
 
-                        term_view.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
+                        term_state.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
 
                         show_port_selection = false;
                         ImGui::CloseCurrentPopup();

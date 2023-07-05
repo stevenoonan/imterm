@@ -22,13 +22,6 @@ class TerminalView
 {
 public:
 	
-
-	enum class NewLineMode {
-		Strict,
-		AddCrToLf,
-		AddLfToCr
-	};
-
 	enum class SelectionMode
 	{
 		Normal,
@@ -100,10 +93,7 @@ public:
 	void SetBreakpoints(const Breakpoints& aMarkers) { mBreakpoints = aMarkers; }
 
 	void Render(const char* aTitle, const ImVec2& aSize = ImVec2(), bool aBorder = false);
-	void SetText(const std::string& aText);
-	std::string GetText() const;
 
-	void SetTextLines(const std::vector<std::string>& aLines);
 	std::vector<std::string> GetTextLines() const;
 
 	std::string GetSelectedText() const;
@@ -115,9 +105,8 @@ public:
 	void SetKeyboardInputAllowed(bool aValue);
 	bool IsKeyboardInputAllowed() const { return  mKeyboardInputAllowed; }
 
-	void SetReadOnly(bool aValue);
-	bool IsReadOnly() const { return mReadOnly; }
-	bool IsTextChanged() const { return mTextChanged; }
+	bool IsReadOnly() const { return mData.IsReadOnly(); }
+	bool IsTextChanged() const { return mData.IsTextChanged(); }
 	bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
 
 	bool IsColorizerEnabled() const { return mColorizerEnabled; }
@@ -138,8 +127,7 @@ public:
 	inline void SetShowWhitespaces(bool aValue) { mShowWhitespaces = aValue; }
 	inline bool IsShowingWhitespaces() const { return mShowWhitespaces; }
 
-	void SetTabSize(int aValue);
-	inline int GetTabSize() const { return mTabSize; }
+
 
 	void InsertText(const std::string& aValue);
 	void InsertText(const char* aValue);
@@ -179,12 +167,8 @@ public:
 
 	ImWchar GetKeyboardInput();
 	bool KeyboardInputAvailable();
-	int TerminalInput(const std::vector<uint8_t>& aVector);
 
-	TerminalData::PaletteIndex GetPaletteIndex(TerminalState aTermState);
-
-	inline NewLineMode GetNewLineMode() const { return mNewLineMode; }
-	inline void SetNewLineMode(NewLineMode aValue) { mNewLineMode = aValue; }
+	
 
 private:
 	typedef std::vector<std::pair<std::regex, TerminalData::PaletteIndex>> RegexList;
@@ -196,29 +180,20 @@ private:
 		Coordinates mCursorPosition;
 	};
 
-	void ProcessInputs();
 	float TextDistanceToLineStart(const Coordinates& aFrom) const;
 	void EnsureCursorVisible();
 	int GetPageSize() const;
-	std::string GetText(const Coordinates& aStart, const Coordinates& aEnd) const;
+	
 	Coordinates GetActualCursorCoordinates() const;
 	Coordinates SanitizeCoordinates(const Coordinates& aValue) const;
 	void Advance(Coordinates& aCoordinates) const;
-	void DeleteRange(const Coordinates& aStart, const Coordinates& aEnd);
-	int InsertTextAt(Coordinates& aWhere, const char* aValue);
 	
 	Coordinates ScreenPosToCoordinates(const ImVec2& aPosition) const;
 	Coordinates FindWordStart(const Coordinates& aFrom) const;
 	Coordinates FindWordEnd(const Coordinates& aFrom) const;
 	Coordinates FindNextWord(const Coordinates& aFrom) const;
-	int GetCharacterIndex(const Coordinates& aCoordinates) const;
-	int GetCharacterColumn(int aLine, int aIndex) const;
-	int GetLineCharacterCount(int aLine) const;
-	int GetLineMaxColumn(int aLine) const;
 	bool IsOnWordBoundary(const Coordinates& aAt) const;
-	void RemoveLine(int aStart, int aEnd);
-	void RemoveLine(int aIndex);
-	TerminalData::Line& InsertLine(int aIndex);
+
 	void EnterCharacter(ImWchar aChar, bool aShift);
 	void Backspace();
 	void DeleteSelection();
@@ -238,14 +213,14 @@ private:
 	
 	EditorState mState;
 
-	int mTabSize;
+	
 	bool mOverwrite;
 	bool mReadOnly;
 	bool mKeyboardInputAllowed;
 	bool mWithinRender;
 	bool mScrollToCursor;
 	bool mScrollToTop;
-	bool mTextChanged;
+	
 	bool mColorizerEnabled;
 	float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the TextEditor.
 	int  mLeftMargin;
@@ -273,8 +248,7 @@ private:
 	std::queue<ImVector<ImWchar>> mQueuedInputQueueCharacters;
 	std::queue<ImWchar> mInputQueueCharacters;
 
-	EscapeSequenceParser mAnsiEscSeqParser;
 	TerminalState& mTermState;
 
-	NewLineMode mNewLineMode;
+	
 };
