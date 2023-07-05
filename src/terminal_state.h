@@ -84,7 +84,6 @@ public:
 	void Update(EscapeSequenceParser::ParseResult aParseResult);
 	void SetBounds(Coordinates aBounds);
 
-
 	const Coordinates& GetBounds()
 	{
 		return mBounds;

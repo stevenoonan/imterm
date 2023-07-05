@@ -51,6 +51,37 @@ public:
 		BadData
 	};
 
+	/**
+	 * @brief The raw 8-bit identifier of an escape sequence. Using this along
+	 * with the 'arguments' of the incoming data stream will result in a 
+	 * CommandType. In many cases, but not all, there is a 1 to 1 correlation
+	 * between EscapeIdentifier and CommandType. EscapeIdentifier is only used
+	 * for the parsing of data, thereafter CommandType is used.
+	*/
+	enum class EscapeIdentifier : uint8_t {
+		Undefined = 0,
+		A_MoveCursorUp = 'A',
+		B_MoveCursorDown = 'B',
+		C_MoveCursorRight = 'C',
+		D_MoveCursorLeft = 'D',
+		E_MoveCursorDownBeginning = 'E',
+		F_MoveCursorUpBeginning = 'F',
+		f_MoveCursor = 'f',
+		G_MoveCursorCol = 'G',
+		H_MoveCursor = 'H',
+		J_EraseDisplay = 'J',
+		K_EraseLine = 'K',
+		m_SetGraphics = 'm',
+		n_RequestReport = 'n',
+		s_SaveCursorPosition = 's',
+		u_RestoreCursorPosition = 'u',
+	};
+
+
+	/**
+	 * @brief An incoming command to change the state and/or request data from
+	 * the terminal.
+	*/
 	enum class CommandType {
 		None,
 		MoveCursorToHome,		  // ESC[H                    moves cursor to home position(0, 0)
@@ -120,7 +151,7 @@ public:
 		uint8_t mOutputChar;
 		Stage mStage;
 		Error mError;
-		uint8_t mIdentifier;
+		EscapeIdentifier mIdentifier;
 		CommandType mCommand;
 		std::vector<int> mCommandData;
 	};
@@ -139,7 +170,7 @@ private:
 	Stage mStage;
 	Error mError;
 
-	uint8_t mIdentifier;
+	EscapeIdentifier mIdentifier;
 	std::vector<uint8_t> mDataElementInProcess;
 	std::vector<int> mDataStaged;
 

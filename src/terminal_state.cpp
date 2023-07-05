@@ -87,7 +87,14 @@ TerminalState::~TerminalState()
 void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
 {
 
+    // If mOutputChar is set, it is not an escape sequence. Otherwise, only 
+    // continue if the sequence has been parsed successfully.
+    if ((aSeq.mOutputChar != 0) || (aSeq.mStage != EscapeSequenceParser::Stage::Inactive) || (aSeq.mError != EscapeSequenceParser::Error::None)) {
+        return;
+    }
+
     using enum EscapeSequenceParser::CommandType;
+    using enum EscapeSequenceParser::EscapeIdentifier;
     EscapeSequenceParser::CommandType type = None;
     bool processed = false;
 
@@ -97,10 +104,10 @@ void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
     std::vector<uint8_t> output;
 
     switch (aSeq.mIdentifier) {
-    case 'H':
+    case H_MoveCursor:
         [[fallthrough]];
-    case 'f':
-        if ((aSeq.mIdentifier == 'H') && aSeq.mCommandData.size() == 0) {
+    case f_MoveCursor:
+        if ((aSeq.mIdentifier == H_MoveCursor) && aSeq.mCommandData.size() == 0) {
             type = MoveCursorToHome;
             mCursorPos.mColumn = 0;
             mCursorPos.mLine = 0;
@@ -111,71 +118,64 @@ void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
             mCursorPos.mLine = aSeq.mCommandData[1];
         }
         break;
-    case 'A':
+    case A_MoveCursorUp:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorUp;
             mCursorPos.mLine -= aSeq.mCommandData[0];
         }
         break;
-    case 'B':
+    case B_MoveCursorDown:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorDown;
             mCursorPos.mLine += aSeq.mCommandData[0];
         }
         break;
-    case 'C':
+    case C_MoveCursorRight:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorRight;
             mCursorPos.mColumn += aSeq.mCommandData[0];
         }
         break;
-    case 'D':
+    case D_MoveCursorLeft:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorLeft;
             mCursorPos.mColumn -= aSeq.mCommandData[0];
         }
         break;
-    case 'E':
+    case E_MoveCursorDownBeginning:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorDownBeginning;
             mCursorPos.mLine += aSeq.mCommandData[0];
             mCursorPos.mColumn = 0;
         }
         break;
-    case 'F':
+    case F_MoveCursorUpBeginning:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorUpBeginning;
             mCursorPos.mLine -= aSeq.mCommandData[0];
             mCursorPos.mColumn = 0;
         }
         break;
-    case 'G':
+    case G_MoveCursorCol:
         if (aSeq.mCommandData.size() == 1) {
             type = MoveCursorCol;
             mCursorPos.mColumn = aSeq.mCommandData[0];
         }
         break;
-    case 's':
+    case s_SaveCursorPosition:
         if (aSeq.mCommandData.size() == 0) {
             type = SaveCursorPosition;
             mSavedCursorPos = mCursorPos;
             processed = true;
         }
         break;
-    case 'u':
+    case u_RestoreCursorPosition:
         if (aSeq.mCommandData.size() == 0) {
             type = RestoreCursorPosition;
             mCursorPos = mSavedCursorPos;
         }
         break;
-    case 'J':
-
-        // None of these are processed here. The actual clearing of lines
-        // occurs in the TerminalView.
-
-        // TODO: Consider creating an interface that TerminalState gets an
-        // object of (via dependency injection) so it can call an Erase()
-        // function directly in this code.
+    case J_EraseDisplay:
 
         if (aSeq.mCommandData.size() == 0) {
             type = EraseDisplayAfterCursor;
@@ -203,13 +203,7 @@ void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
             }
         }
         break;
-    case 'K':
-
-        // None of these are processed here
-
-        // TODO: Consider creating an interface that TerminalState gets an
-        // object of (via dependency injection) so it can call an Erase()
-        // function directly in this code.
+    case K_EraseLine:
 
         if (aSeq.mCommandData.size() == 0) {
             type = EraseLineAfterCursor;
@@ -239,13 +233,13 @@ void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
         }
         break;
 
-    case 'm':
+    case m_SetGraphics:
         mGraphics.Update(aSeq.mCommandData);
         type = SetGraphics;
         processed = true;
         break;
 
-    case 'n':
+    case n_RequestReport:
         if (aSeq.mCommandData.size() == 1) {
             if (aSeq.mCommandData[0] == 5) {
 
@@ -260,6 +254,9 @@ void TerminalState::Update(EscapeSequenceParser::ParseResult aSeq)
                 type = CursorPositionReport;
             }
         }
+        break;
+    default:
+        assert(0);
     }
     
     if ((type >= MoveCursorToHome && type <= MoveCursorCol) || (type == RestoreCursorPosition)) {

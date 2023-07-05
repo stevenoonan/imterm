@@ -2,7 +2,7 @@
 
 #include "escape_sequence_parser.h"
 
-EscapeSequenceParser::EscapeSequenceParser() : mStage(Stage::Inactive), mError(Error::NotReady), mIdentifier(0)
+EscapeSequenceParser::EscapeSequenceParser() : mStage(Stage::Inactive), mError(Error::NotReady), mIdentifier(EscapeIdentifier::Undefined)
 {
 }
 
@@ -17,7 +17,7 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 	case Stage::Inactive:
 		// Init / re-init status
 		mStage = Stage::GetEsc;
-		mIdentifier = 0;
+		mIdentifier = EscapeIdentifier::Undefined;
 		mDataStaged.clear();
 		mDataElementInProcess.clear();
 		mError = Error::NotReady;
@@ -55,7 +55,7 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 		else {
 			if ((input >= 'A' && input <= 'Z') || (input >= 'a' && input <= 'z')) {
 				ConvertDataElementInProcessToStagedInt();
-				mIdentifier = input;
+				mIdentifier = static_cast<EscapeIdentifier>(input);
 				mError = Error::None;
 				mParseResult.mIdentifier = mIdentifier;
 				mParseResult.mCommandData = mDataStaged;

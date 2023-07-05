@@ -447,10 +447,11 @@ int TerminalView::TerminalInput(const std::vector<uint8_t>& aVector)
 				if (escSeq.mOutputChar) {
 					InputGlyph(line, termColI, pi, escSeq.mOutputChar);
 				}
-				else if ((escSeq.mStage == EscapeSequenceParser::Stage::Inactive) && (escSeq.mError == EscapeSequenceParser::Error::None)) {
-					mTermState.Update(escSeq);
-					
-				}
+
+				// Update the terminal state, which includes coloring,
+				// clearing, and positioning the cursor. It may also cause 
+				// serial output to be produced which mTermState will queue up
+				mTermState.Update(escSeq);
 
 				aValue++;
 			}
