@@ -78,19 +78,19 @@ class TerminalState {
 
 public:
 
-	TerminalState(TerminalData& aTerminalData);
+	enum class NewLineMode {
+		Strict,
+		AddCrToLf,
+		AddLfToCr
+	};
+
+	TerminalState(TerminalData& aTerminalData, NewLineMode aNewLineMode);
 	~TerminalState();
 
 	void Update(EscapeSequenceParser::ParseResult aParseResult);
 	void SetBounds(Coordinates aBounds);
 
 	int Input(const std::vector<uint8_t>& aVector);
-
-	enum class NewLineMode {
-		Strict,
-		AddCrToLf,
-		AddLfToCr
-	};
 
 	const Coordinates& GetBounds()
 	{

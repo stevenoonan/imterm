@@ -51,7 +51,6 @@ TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminal
 	, mTermState(aTerminalState)
 {
 	SetPalette(GetDarkPalette());
-	mLines.push_back(TerminalData::Line());
 }
 
 TerminalView::~TerminalView()
@@ -68,7 +67,7 @@ void TerminalView::SetPalette(const Palette & aValue)
 
 Coordinates TerminalView::GetActualCursorCoordinates() const
 {
-	return SanitizeCoordinates(mState.mCursorPosition);
+	return SanitizeCoordinates(mUiState.mCursorPosition);
 }
 
 Coordinates TerminalView::SanitizeCoordinates(const Coordinates & aValue) const
@@ -560,7 +559,7 @@ void TerminalView::HandleMouseInputs()
 			{
 				if (!ctrl)
 				{
-					mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+					mUiState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 					mSelectionMode = SelectionMode::Line;
 					SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
 				}
@@ -576,7 +575,7 @@ void TerminalView::HandleMouseInputs()
 			{
 				if (!ctrl)
 				{
-					mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+					mUiState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 					if (mSelectionMode == SelectionMode::Line)
 						mSelectionMode = SelectionMode::Normal;
 					else
@@ -592,7 +591,7 @@ void TerminalView::HandleMouseInputs()
 			*/
 			else if (click)
 			{
-				mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+				mUiState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 				if (ctrl)
 					mSelectionMode = SelectionMode::Word;
 				else
@@ -605,7 +604,7 @@ void TerminalView::HandleMouseInputs()
 			else if (ImGui::IsMouseDragging(0) && ImGui::IsMouseDown(0))
 			{
 				io.WantCaptureMouse = true;
-				mState.mCursorPosition = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+				mUiState.mCursorPosition = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
 				SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
 			}
 		}
@@ -688,13 +687,13 @@ void TerminalView::Render()
 			float sstart = -1.0f;
 			float ssend = -1.0f;
 
-			assert(mState.mSelectionStart <= mState.mSelectionEnd);
-			if (mState.mSelectionStart <= lineEndCoord)
-				sstart = mState.mSelectionStart > lineStartCoord ? TextDistanceToLineStart(mState.mSelectionStart) : 0.0f;
-			if (mState.mSelectionEnd > lineStartCoord)
-				ssend = TextDistanceToLineStart(mState.mSelectionEnd < lineEndCoord ? mState.mSelectionEnd : lineEndCoord);
+			assert(mUiState.mSelectionStart <= mUiState.mSelectionEnd);
+			if (mUiState.mSelectionStart <= lineEndCoord)
+				sstart = mUiState.mSelectionStart > lineStartCoord ? TextDistanceToLineStart(mUiState.mSelectionStart) : 0.0f;
+			if (mUiState.mSelectionEnd > lineStartCoord)
+				ssend = TextDistanceToLineStart(mUiState.mSelectionEnd < lineEndCoord ? mUiState.mSelectionEnd : lineEndCoord);
 
-			if (mState.mSelectionEnd.mLine > lineNo)
+			if (mUiState.mSelectionEnd.mLine > lineNo)
 				ssend += mCharAdvance.x;
 
 			if (sstart != -1 && ssend != -1 && sstart < ssend)
@@ -742,9 +741,9 @@ void TerminalView::Render()
 			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
 			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)TerminalData::PaletteIndex::LineNumber], buf);
 
-			mState.mCursorPosition = mTermState.getPositionRelative(mLines.size());
+			mUiState.mCursorPosition = mTermState.getPositionRelative(mLines.size());
 
-			if (mState.mCursorPosition.mLine == lineNo)
+			if (mUiState.mCursorPosition.mLine == lineNo)
 			{
 				auto focused = ImGui::IsWindowFocused();
 
@@ -764,8 +763,8 @@ void TerminalView::Render()
 					if (elapsed > 400)
 					{
 						float width = 1.0f;
-						auto cindex = mData.GetCharacterIndex(mState.mCursorPosition);
-						float cx = TextDistanceToLineStart(mState.mCursorPosition);
+						auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
+						float cx = TextDistanceToLineStart(mUiState.mCursorPosition);
 
 						if (mOverwrite && cindex < (int)line.size())
 						{
@@ -924,11 +923,11 @@ void TerminalView::EnterCharacter(ImWchar aChar, bool aShift)
 
 	if (HasSelection())
 	{
-		if (aChar == '\t' && mState.mSelectionStart.mLine != mState.mSelectionEnd.mLine)
+		if (aChar == '\t' && mUiState.mSelectionStart.mLine != mUiState.mSelectionEnd.mLine)
 		{
 
-			auto start = mState.mSelectionStart;
-			auto end = mState.mSelectionEnd;
+			auto start = mUiState.mSelectionStart;
+			auto end = mUiState.mSelectionEnd;
 			auto originalEnd = end;
 
 			if (start > end)
@@ -990,8 +989,8 @@ void TerminalView::EnterCharacter(ImWchar aChar, bool aShift)
 					rangeEnd = Coordinates(end.mLine - 1, GetLineMaxColumn(end.mLine - 1));
 				}
 
-				mState.mSelectionStart = start;
-				mState.mSelectionEnd = end;
+				mUiState.mSelectionStart = start;
+				mUiState.mSelectionEnd = end;
 
 				mTextChanged = true;
 
@@ -1071,9 +1070,9 @@ void TerminalView::SetColorizerEnable(bool aValue)
 
 void TerminalView::SetCursorPosition(const Coordinates & aPosition)
 {
-	if (mState.mCursorPosition != aPosition)
+	if (mUiState.mCursorPosition != aPosition)
 	{
-		mState.mCursorPosition = aPosition;
+		mUiState.mCursorPosition = aPosition;
 		mCursorPositionChanged = true;
 		EnsureCursorVisible();
 	}
@@ -1081,27 +1080,27 @@ void TerminalView::SetCursorPosition(const Coordinates & aPosition)
 
 void TerminalView::SetSelectionStart(const Coordinates & aPosition)
 {
-	mState.mSelectionStart = SanitizeCoordinates(aPosition);
-	if (mState.mSelectionStart > mState.mSelectionEnd)
-		std::swap(mState.mSelectionStart, mState.mSelectionEnd);
+	mUiState.mSelectionStart = SanitizeCoordinates(aPosition);
+	if (mUiState.mSelectionStart > mUiState.mSelectionEnd)
+		std::swap(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 }
 
 void TerminalView::SetSelectionEnd(const Coordinates & aPosition)
 {
-	mState.mSelectionEnd = SanitizeCoordinates(aPosition);
-	if (mState.mSelectionStart > mState.mSelectionEnd)
-		std::swap(mState.mSelectionStart, mState.mSelectionEnd);
+	mUiState.mSelectionEnd = SanitizeCoordinates(aPosition);
+	if (mUiState.mSelectionStart > mUiState.mSelectionEnd)
+		std::swap(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 }
 
 void TerminalView::SetSelection(const Coordinates & aStart, const Coordinates & aEnd, SelectionMode aMode)
 {
-	auto oldSelStart = mState.mSelectionStart;
-	auto oldSelEnd = mState.mSelectionEnd;
+	auto oldSelStart = mUiState.mSelectionStart;
+	auto oldSelEnd = mUiState.mSelectionEnd;
 
-	mState.mSelectionStart = SanitizeCoordinates(aStart);
-	mState.mSelectionEnd = SanitizeCoordinates(aEnd);
-	if (mState.mSelectionStart > mState.mSelectionEnd)
-		std::swap(mState.mSelectionStart, mState.mSelectionEnd);
+	mUiState.mSelectionStart = SanitizeCoordinates(aStart);
+	mUiState.mSelectionEnd = SanitizeCoordinates(aEnd);
+	if (mUiState.mSelectionStart > mUiState.mSelectionEnd)
+		std::swap(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 
 	switch (aMode)
 	{
@@ -1109,86 +1108,39 @@ void TerminalView::SetSelection(const Coordinates & aStart, const Coordinates & 
 		break;
 	case TerminalView::SelectionMode::Word:
 	{
-		mState.mSelectionStart = FindWordStart(mState.mSelectionStart);
-		if (!IsOnWordBoundary(mState.mSelectionEnd))
-			mState.mSelectionEnd = FindWordEnd(FindWordStart(mState.mSelectionEnd));
+		mUiState.mSelectionStart = FindWordStart(mUiState.mSelectionStart);
+		if (!IsOnWordBoundary(mUiState.mSelectionEnd))
+			mUiState.mSelectionEnd = FindWordEnd(FindWordStart(mUiState.mSelectionEnd));
 		break;
 	}
 	case TerminalView::SelectionMode::Line:
 	{
-		const auto lineNo = mState.mSelectionEnd.mLine;
+		const auto lineNo = mUiState.mSelectionEnd.mLine;
 		const auto lineSize = (size_t)lineNo < mLines.size() ? mLines[lineNo].size() : 0;
-		mState.mSelectionStart = Coordinates(mState.mSelectionStart.mLine, 0);
-		mState.mSelectionEnd = Coordinates(lineNo, mData.GetLineMaxColumn(lineNo));
+		mUiState.mSelectionStart = Coordinates(mUiState.mSelectionStart.mLine, 0);
+		mUiState.mSelectionEnd = Coordinates(lineNo, mData.GetLineMaxColumn(lineNo));
 		break;
 	}
 	default:
 		break;
 	}
 
-	if (mState.mSelectionStart != oldSelStart ||
-		mState.mSelectionEnd != oldSelEnd)
+	if (mUiState.mSelectionStart != oldSelStart ||
+		mUiState.mSelectionEnd != oldSelEnd)
 		mCursorPositionChanged = true;
 }
 
 
 
-void TerminalView::InsertText(const std::string & aValue)
-{
-	InsertText(aValue.c_str());
-}
-
-void TerminalView::InsertText(const char * aValue)
-{
-	if (aValue == nullptr)
-		return;
-
-	auto pos = GetActualCursorCoordinates();
-	auto start = std::min(pos, mState.mSelectionStart);
-	int totalLines = pos.mLine - start.mLine;
-
-	totalLines += mData.InsertTextAt(pos, aValue);
-
-	SetSelection(pos, pos);
-	SetCursorPosition(pos);
-}
-
-void TerminalView::AppendText(const std::string& aValue)
-{
-	AppendText(aValue.c_str());
-}
-
-void TerminalView::AppendText(const char* aValue)
-{
-	if (aValue == nullptr)
-		return;
-
-	auto line = (int)mLines.size() - 1;
-	auto column = mData.GetLineMaxColumn(line);
-	Coordinates pos(line, column);
-
-	auto start = std::min(pos, mState.mSelectionStart);
-	int totalLines = pos.mLine - start.mLine;
-
-	totalLines += mData.InsertTextAt(pos, aValue);
-
-	//SetSelection(pos, pos);
-	//SetCursorPosition(pos);
-}
-
-void TerminalView::AppendLine()
-{
-	mLines.push_back(TerminalData::Line());
-}
 
 void TerminalView::SetCursorToEnd()
 {
 	auto line = (int)mLines.size() - 1;
 	auto column = mData.GetLineMaxColumn(line);
 	Coordinates pos(line, column);
-	if (mState.mCursorPosition != pos)
+	if (mUiState.mCursorPosition != pos)
 	{
-		mState.mCursorPosition = pos;
+		mUiState.mCursorPosition = pos;
 		mCursorPositionChanged = true;
 		EnsureCursorVisible();
 	}
@@ -1197,37 +1149,37 @@ void TerminalView::SetCursorToEnd()
 
 void TerminalView::DeleteSelection()
 {
-	assert(mState.mSelectionEnd >= mState.mSelectionStart);
+	assert(mUiState.mSelectionEnd >= mUiState.mSelectionStart);
 
-	if (mState.mSelectionEnd == mState.mSelectionStart)
+	if (mUiState.mSelectionEnd == mUiState.mSelectionStart)
 		return;
 
-	mData.DeleteRange(mState.mSelectionStart, mState.mSelectionEnd);
+	mData.DeleteRange(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 
-	SetSelection(mState.mSelectionStart, mState.mSelectionStart);
-	SetCursorPosition(mState.mSelectionStart);
+	SetSelection(mUiState.mSelectionStart, mUiState.mSelectionStart);
+	SetCursorPosition(mUiState.mSelectionStart);
 }
 
 void TerminalView::MoveUp(int aAmount, bool aSelect)
 {
-	auto oldPos = mState.mCursorPosition;
-	mState.mCursorPosition.mLine = std::max(0, mState.mCursorPosition.mLine - aAmount);
-	if (oldPos != mState.mCursorPosition)
+	auto oldPos = mUiState.mCursorPosition;
+	mUiState.mCursorPosition.mLine = std::max(0, mUiState.mCursorPosition.mLine - aAmount);
+	if (oldPos != mUiState.mCursorPosition)
 	{
 		if (aSelect)
 		{
 			if (oldPos == mInteractiveStart)
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 			else if (oldPos == mInteractiveEnd)
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			else
 			{
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 				mInteractiveEnd = oldPos;
 			}
 		}
 		else
-			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
 
 		EnsureCursorVisible();
@@ -1236,26 +1188,26 @@ void TerminalView::MoveUp(int aAmount, bool aSelect)
 
 void TerminalView::MoveDown(int aAmount, bool aSelect)
 {
-	assert(mState.mCursorPosition.mColumn >= 0);
-	auto oldPos = mState.mCursorPosition;
-	mState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mState.mCursorPosition.mLine + aAmount));
+	assert(mUiState.mCursorPosition.mColumn >= 0);
+	auto oldPos = mUiState.mCursorPosition;
+	mUiState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mUiState.mCursorPosition.mLine + aAmount));
 
-	if (mState.mCursorPosition != oldPos)
+	if (mUiState.mCursorPosition != oldPos)
 	{
 		if (aSelect)
 		{
 			if (oldPos == mInteractiveEnd)
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			else if (oldPos == mInteractiveStart)
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 			else
 			{
 				mInteractiveStart = oldPos;
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			}
 		}
 		else
-			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
 
 		EnsureCursorVisible();
@@ -1272,10 +1224,10 @@ void TerminalView::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	if (mLines.empty())
 		return;
 
-	auto oldPos = mState.mCursorPosition;
-	mState.mCursorPosition = GetActualCursorCoordinates();
-	auto line = mState.mCursorPosition.mLine;
-	auto cindex = mData.GetCharacterIndex(mState.mCursorPosition);
+	auto oldPos = mUiState.mCursorPosition;
+	mUiState.mCursorPosition = GetActualCursorCoordinates();
+	auto line = mUiState.mCursorPosition.mLine;
+	auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
 
 	while (aAmount-- > 0)
 	{
@@ -1303,31 +1255,31 @@ void TerminalView::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 			}
 		}
 
-		mState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
+		mUiState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
 		if (aWordMode)
 		{
-			mState.mCursorPosition = FindWordStart(mState.mCursorPosition);
-			cindex = mData.GetCharacterIndex(mState.mCursorPosition);
+			mUiState.mCursorPosition = FindWordStart(mUiState.mCursorPosition);
+			cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
 		}
 	}
 
-	mState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
+	mUiState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
 
-	assert(mState.mCursorPosition.mColumn >= 0);
+	assert(mUiState.mCursorPosition.mColumn >= 0);
 	if (aSelect)
 	{
 		if (oldPos == mInteractiveStart)
-			mInteractiveStart = mState.mCursorPosition;
+			mInteractiveStart = mUiState.mCursorPosition;
 		else if (oldPos == mInteractiveEnd)
-			mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveEnd = mUiState.mCursorPosition;
 		else
 		{
-			mInteractiveStart = mState.mCursorPosition;
+			mInteractiveStart = mUiState.mCursorPosition;
 			mInteractiveEnd = oldPos;
 		}
 	}
 	else
-		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+		mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
 
 	EnsureCursorVisible();
@@ -1335,23 +1287,23 @@ void TerminalView::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 
 void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 {
-	auto oldPos = mState.mCursorPosition;
+	auto oldPos = mUiState.mCursorPosition;
 
 	if (mLines.empty() || oldPos.mLine >= mLines.size())
 		return;
 
-	auto cindex = mData.GetCharacterIndex(mState.mCursorPosition);
+	auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
 	while (aAmount-- > 0)
 	{
-		auto lindex = mState.mCursorPosition.mLine;
+		auto lindex = mUiState.mCursorPosition.mLine;
 		auto& line = mLines[lindex];
 
 		if (cindex >= line.size())
 		{
-			if (mState.mCursorPosition.mLine < mLines.size() - 1)
+			if (mUiState.mCursorPosition.mLine < mLines.size() - 1)
 			{
-				mState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mState.mCursorPosition.mLine + 1));
-				mState.mCursorPosition.mColumn = 0;
+				mUiState.mCursorPosition.mLine = std::max(0, std::min((int)mLines.size() - 1, mUiState.mCursorPosition.mLine + 1));
+				mUiState.mCursorPosition.mColumn = 0;
 			}
 			else
 				return;
@@ -1359,26 +1311,26 @@ void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		else
 		{
 			cindex += TerminalData::UTF8CharLength(line[cindex].mChar);
-			mState.mCursorPosition = Coordinates(lindex, mData.GetCharacterColumn(lindex, cindex));
+			mUiState.mCursorPosition = Coordinates(lindex, mData.GetCharacterColumn(lindex, cindex));
 			if (aWordMode)
-				mState.mCursorPosition = FindNextWord(mState.mCursorPosition);
+				mUiState.mCursorPosition = FindNextWord(mUiState.mCursorPosition);
 		}
 	}
 
 	if (aSelect)
 	{
 		if (oldPos == mInteractiveEnd)
-			mInteractiveEnd = SanitizeCoordinates(mState.mCursorPosition);
+			mInteractiveEnd = SanitizeCoordinates(mUiState.mCursorPosition);
 		else if (oldPos == mInteractiveStart)
-			mInteractiveStart = mState.mCursorPosition;
+			mInteractiveStart = mUiState.mCursorPosition;
 		else
 		{
 			mInteractiveStart = oldPos;
-			mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveEnd = mUiState.mCursorPosition;
 		}
 	}
 	else
-		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+		mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
 
 	EnsureCursorVisible();
@@ -1386,18 +1338,18 @@ void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 
 void TerminalView::MoveTop(bool aSelect)
 {
-	auto oldPos = mState.mCursorPosition;
+	auto oldPos = mUiState.mCursorPosition;
 	SetCursorPosition(Coordinates(0, 0));
 
-	if (mState.mCursorPosition != oldPos)
+	if (mUiState.mCursorPosition != oldPos)
 	{
 		if (aSelect)
 		{
 			mInteractiveEnd = oldPos;
-			mInteractiveStart = mState.mCursorPosition;
+			mInteractiveStart = mUiState.mCursorPosition;
 		}
 		else
-			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
 	}
 }
@@ -1419,56 +1371,61 @@ void TerminalView::TerminalView::MoveBottom(bool aSelect)
 
 void TerminalView::MoveHome(bool aSelect)
 {
-	auto oldPos = mState.mCursorPosition;
-	SetCursorPosition(Coordinates(mState.mCursorPosition.mLine, 0));
+	auto oldPos = mUiState.mCursorPosition;
+	SetCursorPosition(Coordinates(mUiState.mCursorPosition.mLine, 0));
 
-	if (mState.mCursorPosition != oldPos)
+	if (mUiState.mCursorPosition != oldPos)
 	{
 		if (aSelect)
 		{
 			if (oldPos == mInteractiveStart)
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 			else if (oldPos == mInteractiveEnd)
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			else
 			{
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 				mInteractiveEnd = oldPos;
 			}
 		}
 		else
-			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
 	}
 }
 
 void TerminalView::MoveEnd(bool aSelect)
 {
-	auto oldPos = mState.mCursorPosition;
-	SetCursorPosition(Coordinates(mState.mCursorPosition.mLine, mData.GetLineMaxColumn(oldPos.mLine)));
+	auto oldPos = mUiState.mCursorPosition;
+	SetCursorPosition(Coordinates(mUiState.mCursorPosition.mLine, mData.GetLineMaxColumn(oldPos.mLine)));
 
-	if (mState.mCursorPosition != oldPos)
+	if (mUiState.mCursorPosition != oldPos)
 	{
 		if (aSelect)
 		{
 			if (oldPos == mInteractiveEnd)
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			else if (oldPos == mInteractiveStart)
-				mInteractiveStart = mState.mCursorPosition;
+				mInteractiveStart = mUiState.mCursorPosition;
 			else
 			{
 				mInteractiveStart = oldPos;
-				mInteractiveEnd = mState.mCursorPosition;
+				mInteractiveEnd = mUiState.mCursorPosition;
 			}
 		}
 		else
-			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+			mInteractiveStart = mInteractiveEnd = mUiState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
 	}
 }
 
 void TerminalView::Delete()
 {
+
+#ifndef DELETE_FUNCTION_ENABLED
+	// TODO: Figure out Delete()
+	assert(0);
+#else
 	assert(!mData.IsReadOnly());
 
 	if (mLines.empty())
@@ -1506,11 +1463,17 @@ void TerminalView::Delete()
 		mData.SetTextChanged(true);
 
 	}
+#endif
 
 }
 
 void TerminalView::Backspace()
 {
+
+#ifndef BACKSPACE_FUNCTION_ENABLED
+	// TODO: Figure out Backspace()
+	assert(0);
+#else
 	assert(!mReadOnly);
 
 	if (mLines.empty())
@@ -1525,28 +1488,28 @@ void TerminalView::Backspace()
 		auto pos = GetActualCursorCoordinates();
 		SetCursorPosition(pos);
 
-		if (mState.mCursorPosition.mColumn == 0)
+		if (mUiState.mCursorPosition.mColumn == 0)
 		{
-			if (mState.mCursorPosition.mLine == 0)
+			if (mUiState.mCursorPosition.mLine == 0)
 				return;
 
-			auto& line = mLines[mState.mCursorPosition.mLine];
-			auto& prevLine = mLines[mState.mCursorPosition.mLine - 1];
-			auto prevSize = mData.GetLineMaxColumn(mState.mCursorPosition.mLine - 1);
+			auto& line = mLines[mUiState.mCursorPosition.mLine];
+			auto& prevLine = mLines[mUiState.mCursorPosition.mLine - 1];
+			auto prevSize = mData.GetLineMaxColumn(mUiState.mCursorPosition.mLine - 1);
 			prevLine.insert(prevLine.end(), line.begin(), line.end());
 
 			ErrorMarkers etmp;
 			for (auto& i : mErrorMarkers)
-				etmp.insert(ErrorMarkers::value_type(i.first - 1 == mState.mCursorPosition.mLine ? i.first - 1 : i.first, i.second));
+				etmp.insert(ErrorMarkers::value_type(i.first - 1 == mUiState.mCursorPosition.mLine ? i.first - 1 : i.first, i.second));
 			mErrorMarkers = std::move(etmp);
 
-			mData.RemoveLine(mState.mCursorPosition.mLine);
-			--mState.mCursorPosition.mLine;
-			mState.mCursorPosition.mColumn = prevSize;
+			mData.RemoveLine(mUiState.mCursorPosition.mLine);
+			--mUiState.mCursorPosition.mLine;
+			mUiState.mCursorPosition.mColumn = prevSize;
 		}
 		else
 		{
-			auto& line = mLines[mState.mCursorPosition.mLine];
+			auto& line = mLines[mUiState.mCursorPosition.mLine];
 			auto cindex = mData.GetCharacterIndex(pos) - 1;
 			auto cend = cindex + 1;
 			while (cindex > 0 && IsUTFSequence(line[cindex].mChar))
@@ -1555,7 +1518,7 @@ void TerminalView::Backspace()
 			//if (cindex > 0 && TerminalData::UTF8CharLength(line[cindex].mChar) > 1)
 			//	--cindex;
 
-			--mState.mCursorPosition.mColumn;
+			--mUiState.mCursorPosition.mColumn;
 
 			while (cindex < line.size() && cend-- > cindex)
 			{
@@ -1567,7 +1530,7 @@ void TerminalView::Backspace()
 
 		EnsureCursorVisible();
 	}
-
+#endif
 }
 
 void TerminalView::SelectWordUnderCursor()
@@ -1583,7 +1546,7 @@ void TerminalView::SelectAll()
 
 bool TerminalView::HasSelection() const
 {
-	return mState.mSelectionEnd > mState.mSelectionStart;
+	return mUiState.mSelectionEnd > mUiState.mSelectionStart;
 }
 
 // TODO: Clean up IsLastLineVisible()
@@ -1659,7 +1622,8 @@ void TerminalView::Paste()
 			DeleteSelection();
 		}
 
-		InsertText(clipText);
+		// TODO: Remove paste?
+		//InsertText(clipText);
 	}
 }
 
@@ -1825,15 +1789,15 @@ bool TerminalView::KeyboardInputAvailable()
 
 std::string TerminalView::GetSelectedText() const
 {
-	return mData.GetText(mState.mSelectionStart, mState.mSelectionEnd);
+	return mData.GetText(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 }
 
 std::string TerminalView::GetCurrentLineText()const
 {
-	auto lineLength = mData.GetLineMaxColumn(mState.mCursorPosition.mLine);
+	auto lineLength = mData.GetLineMaxColumn(mUiState.mCursorPosition.mLine);
 	return mData.GetText(
-		Coordinates(mState.mCursorPosition.mLine, 0),
-		Coordinates(mState.mCursorPosition.mLine, lineLength));
+		Coordinates(mUiState.mCursorPosition.mLine, 0),
+		Coordinates(mUiState.mCursorPosition.mLine, lineLength));
 }
 
 float TerminalView::TextDistanceToLineStart(const Coordinates& aFrom) const

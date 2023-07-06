@@ -82,7 +82,7 @@ uint32_t TerminalGraphicsState::Update(const std::vector<int> &aCommandData)
     return mState;
 }
 
-TerminalState::TerminalState(TerminalData& aTerminalData): mTerminalData(aTerminalData)
+TerminalState::TerminalState(TerminalData& aTerminalData, NewLineMode aNewLineMode): mTerminalData(aTerminalData), mNewLineMode(aNewLineMode)
 {
 }
 

@@ -129,12 +129,7 @@ public:
 
 
 
-	void InsertText(const std::string& aValue);
-	void InsertText(const char* aValue);
 
-	void AppendText(const std::string& aValue);
-	void AppendText(const char* aValue);
-	void AppendLine();
 	void SetCursorToEnd();
 
 	void MoveUp(int aAmount = 1, bool aSelect = false);
@@ -173,7 +168,7 @@ public:
 private:
 	typedef std::vector<std::pair<std::regex, TerminalData::PaletteIndex>> RegexList;
 
-	struct EditorState
+	struct UiState
 	{
 		Coordinates mSelectionStart;
 		Coordinates mSelectionEnd;
@@ -208,10 +203,10 @@ private:
 	void InputGlyph(TerminalData::Line& line, int& termColI, TerminalData::PaletteIndex pi, uint8_t aValue);
 
 	float mLineSpacing;
-	TerminalData::Lines& mLines;
+	const TerminalData::Lines& mLines;
 	TerminalData& mData;
 	
-	EditorState mState;
+	UiState mUiState;
 
 	
 	bool mOverwrite;

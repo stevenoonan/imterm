@@ -30,7 +30,7 @@ namespace imterm {
     static std::string serial_name = "[Not Connected]";
     
     static TerminalData term_data;
-    static TerminalState term_state(term_data);
+    static TerminalState term_state(term_data, TerminalState::NewLineMode::Strict);
     static TerminalView term_view(term_data, term_state);
     static auto settings = CaptureSettings();
 

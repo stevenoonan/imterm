@@ -1,7 +1,7 @@
 #include "terminal_data.h"
 
 TerminalData::TerminalData() : mReadOnly(false), mTextChanged(false), mTabSize(4) {
-
+	mLines.push_back(Line());
 }
 
 TerminalData::~TerminalData() {
