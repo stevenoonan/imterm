@@ -100,12 +100,7 @@ public:
 	std::string GetCurrentLineText()const;
 
 	int GetTotalLines() const { return (int)mLines.size(); }
-	bool IsOverwrite() const { return mOverwrite; }
 
-	void SetKeyboardInputAllowed(bool aValue);
-	bool IsKeyboardInputAllowed() const { return  mKeyboardInputAllowed; }
-
-	bool IsReadOnly() const { return mData.IsReadOnly(); }
 	bool IsTextChanged() const { return mData.IsTextChanged(); }
 	bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
 
@@ -160,6 +155,12 @@ public:
 	static const Palette& GetLightPalette();
 	static const Palette& GetRetroBluePalette();
 
+	void AddKeyboardInput(std::string input);
+	void AddKeyboardInput(std::u16string input);
+	void AddKeyboardInput(char input);
+	void AddKeyboardInput(const char * input);
+
+
 	ImWchar GetKeyboardInput();
 	bool KeyboardInputAvailable();
 
@@ -172,7 +173,7 @@ private:
 	{
 		Coordinates mSelectionStart;
 		Coordinates mSelectionEnd;
-		Coordinates mCursorPosition;
+		Coordinates mCursorPosition;	// The UI Cursor, not to be confused with the real terminal cursor location
 	};
 
 	float TextDistanceToLineStart(const Coordinates& aFrom) const;
@@ -208,10 +209,6 @@ private:
 	
 	UiState mUiState;
 
-	
-	bool mOverwrite;
-	bool mReadOnly;
-	bool mKeyboardInputAllowed;
 	bool mWithinRender;
 	bool mScrollToCursor;
 	bool mScrollToTop;
@@ -241,7 +238,7 @@ private:
 
 	RenderGeometry mLastRenderGeometry;
 	std::queue<ImVector<ImWchar>> mQueuedInputQueueCharacters;
-	std::queue<ImWchar> mInputQueueCharacters;
+	std::queue<ImWchar> mKeyboardInputQueue;
 
 	TerminalState& mTermState;
 

@@ -5,6 +5,9 @@
 #include <cmath>
 #include <stdexcept>
 #include <future>
+#include <queue>
+#include <algorithm>
+#include <iterator>
 
 #include "terminal_view.h"
 #include "escape_sequence_parser.h"
@@ -29,7 +32,6 @@ bool equals(InputIt1 first1, InputIt1 last1,
 
 TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState)
 	: mLineSpacing(1.0f)
-	, mOverwrite(false)
 	, mWithinRender(false)
 	, mScrollToCursor(false)
 	, mScrollToTop(false)
@@ -392,91 +394,49 @@ void TerminalView::HandleKeyboardInputs()
 	{
 		if (ImGui::IsWindowHovered())
 			ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-		//ImGui::CaptureKeyboardFromApp(true);
 
-		bool allowKeyboardInput = !IsReadOnly() && IsKeyboardInputAllowed();
 
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
-		if (allowKeyboardInput) {
+		static const auto* input_delete = "\x1B[3~";
+		static const auto* input_backspace = "\x7F";
+		static const auto* input_enter = "\n";
+		static const auto* input_tab = "\t";
+		static const auto* input_up_arrow = "\x1B[A";
+		static const auto* input_down_arrow = "\x1B[B";
+		static const auto* input_right_arrow = "\x1B[C";
+		static const auto* input_left_arrow = "\x1B[D";
 
-			//if (allowKeyboardInput && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Z)))
-			//	Undo();
-			//else if (allowKeyboardInput && !ctrl && !shift && alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
-			//	Undo();
-			//else if (allowKeyboardInput && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Y)))
-			//	Redo();
-			//else 
 
-			if (allowKeyboardInput && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
-				Delete();
-			else if (allowKeyboardInput && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
-				Backspace();
-			else if (allowKeyboardInput && !ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
-				Paste();
-			else if (allowKeyboardInput && ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)))
-				Paste();
-			else if (allowKeyboardInput && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)))
-				EnterCharacter('\n', false);
-			else if (allowKeyboardInput && !ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
-				EnterCharacter('\t', shift);
-
+		/* handle Delete, Backspace, Enter / Return, Tab */
+		if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete))) {
+			AddKeyboardInput(input_delete);
 		}
-		else {
-
-			bool test = false;
-			/*if (exposeKeyboardInput && !ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter))) {
-				mInputQueueCharacters.push('\n');
-			}*/
-
-			/* handle Delete, Backspace, Enter / Return, Tab */
-			if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
-				//Delete();
-				test = true;
-			else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
-				//Backspace();
-				//test = true;
-				mInputQueueCharacters.push('\x7F');
-			else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
-				Paste();
-			else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)))
-				Paste();
-			else if (!ctrl && !shift && !alt && (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)) || ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_KeypadEnter))))
-				//EnterCharacter('\n', false);
-				//test = true;
-				mInputQueueCharacters.push('\n');
-			else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
-				//EnterCharacter('\t', shift);
-				mInputQueueCharacters.push('\t');
-				//test = true;
-
+		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace))) {
+			AddKeyboardInput(input_backspace);
 		}
+		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
+			Paste();
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)))
+			Paste();
+		else if (!ctrl && !shift && !alt && (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)) || ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_KeypadEnter))))
+			AddKeyboardInput(input_enter);
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
+			AddKeyboardInput(input_tab);
+
 
 		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow))) {
-			mInputQueueCharacters.push('\x1B'); //MoveUp(1, shift);
-			mInputQueueCharacters.push('[');
-			mInputQueueCharacters.push('A');
+			AddKeyboardInput(input_up_arrow);
 		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow))) {
-			//MoveDown(1, shift);
-			mInputQueueCharacters.push('\x1B');
-			mInputQueueCharacters.push('[');
-			mInputQueueCharacters.push('B');
-
+			AddKeyboardInput(input_down_arrow);
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow))) {
-			//MoveLeft(1, shift, ctrl);
-			mInputQueueCharacters.push('\x1B');
-			mInputQueueCharacters.push('[');
-			mInputQueueCharacters.push('D');
-
+			AddKeyboardInput(input_left_arrow);
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
-			//MoveRight(1, shift, ctrl);
-			mInputQueueCharacters.push('\x1B');
-			mInputQueueCharacters.push('[');
-			mInputQueueCharacters.push('C');
+			AddKeyboardInput(input_right_arrow);
 
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageUp)))
@@ -491,8 +451,6 @@ void TerminalView::HandleKeyboardInputs()
 			MoveHome(shift);
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveEnd(shift);
-		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
-			mOverwrite ^= true;
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
 			Copy();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C)))
@@ -504,32 +462,13 @@ void TerminalView::HandleKeyboardInputs()
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
 			SelectAll();
 
-		
 
-		
-		
-		
-
-
-
-		bool exposeKeyboardInput = true;
-
-		if ((allowKeyboardInput || exposeKeyboardInput) && !io.InputQueueCharacters.empty())
+		if (!io.InputQueueCharacters.empty())
 		{
-			for (int i = 0; i < io.InputQueueCharacters.Size; i++)
-			{
-				auto c = io.InputQueueCharacters[i];
-
-				if (allowKeyboardInput) {
-					if (c != 0 && (c == '\n' || c >= 32))
-						EnterCharacter(c, shift);
-				}
-
-				if (exposeKeyboardInput) {
-					mInputQueueCharacters.push(c);
-				}
+			for (auto& elem : io.InputQueueCharacters) {
+				mKeyboardInputQueue.push(std::move(elem));
+				
 			}
-			io.InputQueueCharacters.resize(0);
 		}
 
 	}
@@ -766,22 +705,6 @@ void TerminalView::Render()
 						auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
 						float cx = TextDistanceToLineStart(mUiState.mCursorPosition);
 
-						if (mOverwrite && cindex < (int)line.size())
-						{
-							auto c = line[cindex].mChar;
-							if (c == '\t')
-							{
-								auto x = (1.0f + std::floor((1.0f + cx) / (float(mData.GetTabSize()) * spaceSize))) * (float(mData.GetTabSize()) * spaceSize);
-								width = x - cx;
-							}
-							else
-							{
-								char buf2[2];
-								buf2[0] = line[cindex].mChar;
-								buf2[1] = '\0';
-								width = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf2).x;
-							}
-						}
 						ImVec2 cstart(textScreenPos.x + cx, lineStartScreenPos.y);
 						ImVec2 cend(textScreenPos.x + cx + width, lineStartScreenPos.y + mCharAdvance.y);
 						drawList->AddRectFilled(cstart, cend, mPalette[(int)TerminalData::TerminalData::PaletteIndex::Cursor]);
@@ -910,158 +833,6 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 
 	mWithinRender = false;
 }
-
-
-void TerminalView::EnterCharacter(ImWchar aChar, bool aShift)
-{
-
-#ifndef ENTER_CHARACTER_FUNC_ENABLED
-	// TODO: Figure out what to do with EnterCharacter()
-	assert(0);
-#else
-	assert(!mReadOnly);
-
-	if (HasSelection())
-	{
-		if (aChar == '\t' && mUiState.mSelectionStart.mLine != mUiState.mSelectionEnd.mLine)
-		{
-
-			auto start = mUiState.mSelectionStart;
-			auto end = mUiState.mSelectionEnd;
-			auto originalEnd = end;
-
-			if (start > end)
-				std::swap(start, end);
-			start.mColumn = 0;
-			//			end.mColumn = end.mLine < mLines.size() ? mLines[end.mLine].size() : 0;
-			if (end.mColumn == 0 && end.mLine > 0)
-				--end.mLine;
-			if (end.mLine >= (int)mLines.size())
-				end.mLine = mLines.empty() ? 0 : (int)mLines.size() - 1;
-			end.mColumn = GetLineMaxColumn(end.mLine);
-
-			//if (end.mColumn >= GetLineMaxColumn(end.mLine))
-			//	end.mColumn = GetLineMaxColumn(end.mLine) - 1;
-
-			bool modified = false;
-
-			for (int i = start.mLine; i <= end.mLine; i++)
-			{
-				auto& line = mLines[i];
-				if (aShift)
-				{
-					if (!line.empty())
-					{
-						if (line.front().mChar == '\t')
-						{
-							line.erase(line.begin());
-							modified = true;
-						}
-						else
-						{
-							for (int j = 0; j < mData.GetTabSize() && !line.empty() && line.front().mChar == ' '; j++)
-							{
-								line.erase(line.begin());
-								modified = true;
-							}
-						}
-					}
-				}
-				else
-				{
-					line.insert(line.begin(), TerminalData::Glyph('\t', TerminalData::PaletteIndex::Background));
-					modified = true;
-				}
-			}
-
-			if (modified)
-			{
-				start = Coordinates(start.mLine, GetCharacterColumn(start.mLine, 0));
-				Coordinates rangeEnd;
-				if (originalEnd.mColumn != 0)
-				{
-					end = Coordinates(end.mLine, GetLineMaxColumn(end.mLine));
-					rangeEnd = end;
-				}
-				else
-				{
-					end = Coordinates(originalEnd.mLine, 0);
-					rangeEnd = Coordinates(end.mLine - 1, GetLineMaxColumn(end.mLine - 1));
-				}
-
-				mUiState.mSelectionStart = start;
-				mUiState.mSelectionEnd = end;
-
-				mTextChanged = true;
-
-				EnsureCursorVisible();
-			}
-
-			return;
-		} // c == '\t'
-		else
-		{
-			DeleteSelection();
-		}
-	} // HasSelection
-
-	auto coord = GetActualCursorCoordinates();
-
-	assert(!mLines.empty());
-
-	if (aChar == '\n')
-	{
-		InsertLine(coord.mLine + 1);
-		auto& line = mLines[coord.mLine];
-		auto& newLine = mLines[coord.mLine + 1];
-
-		const size_t whitespaceSize = newLine.size();
-		auto cindex = GetCharacterIndex(coord);
-		newLine.insert(newLine.end(), line.begin() + cindex, line.end());
-		line.erase(line.begin() + cindex, line.begin() + line.size());
-		SetCursorPosition(Coordinates(coord.mLine + 1, GetCharacterColumn(coord.mLine + 1, (int)whitespaceSize)));
-	}
-	else
-	{
-		char buf[7];
-		int e = ImTextCharToUtf8(buf, 7, aChar);
-		if (e > 0)
-		{
-			buf[e] = '\0';
-			auto& line = mLines[coord.mLine];
-			auto cindex = GetCharacterIndex(coord);
-
-			if (mOverwrite && cindex < (int)line.size())
-			{
-				auto d = TerminalData::UTF8CharLength(line[cindex].mChar);
-
-				while (d-- > 0 && cindex < (int)line.size())
-				{
-					line.erase(line.begin() + cindex);
-				}
-			}
-
-			for (auto p = buf; *p != '\0'; p++, ++cindex)
-				line.insert(line.begin() + cindex, TerminalData::Glyph(*p, TerminalData::PaletteIndex::Default));
-
-			SetCursorPosition(Coordinates(coord.mLine, GetCharacterColumn(coord.mLine, cindex)));
-		}
-		else
-			return;
-	}
-
-	mTextChanged = true;
-
-	EnsureCursorVisible();
-#endif
-}
-
-void TerminalView::SetKeyboardInputAllowed(bool aValue)
-{
-	mKeyboardInputAllowed = aValue;
-}
-
-
 
 void TerminalView::SetColorizerEnable(bool aValue)
 {
@@ -1419,120 +1190,6 @@ void TerminalView::MoveEnd(bool aSelect)
 	}
 }
 
-void TerminalView::Delete()
-{
-
-#ifndef DELETE_FUNCTION_ENABLED
-	// TODO: Figure out Delete()
-	assert(0);
-#else
-	assert(!mData.IsReadOnly());
-
-	if (mLines.empty())
-		return;
-
-
-	if (HasSelection())
-	{
-		DeleteSelection();
-	}
-	else
-	{
-		auto pos = GetActualCursorCoordinates();
-		SetCursorPosition(pos);
-		auto& line = mLines[pos.mLine];
-
-		if (pos.mColumn == mData.GetLineMaxColumn(pos.mLine))
-		{
-			if (pos.mLine == (int)mLines.size() - 1)
-				return;
-
-			auto& nextLine = mLines[pos.mLine + 1];
-			line.insert(line.end(), nextLine.begin(), nextLine.end());
-			mData.RemoveLine(pos.mLine + 1);
-		}
-		else
-		{
-			auto cindex = mData.GetCharacterIndex(pos);
-
-			auto d = TerminalData::UTF8CharLength(line[cindex].mChar);
-			while (d-- > 0 && cindex < (int)line.size())
-				line.erase(line.begin() + cindex);
-		}
-
-		mData.SetTextChanged(true);
-
-	}
-#endif
-
-}
-
-void TerminalView::Backspace()
-{
-
-#ifndef BACKSPACE_FUNCTION_ENABLED
-	// TODO: Figure out Backspace()
-	assert(0);
-#else
-	assert(!mReadOnly);
-
-	if (mLines.empty())
-		return;
-
-	if (HasSelection())
-	{
-		DeleteSelection();
-	}
-	else
-	{
-		auto pos = GetActualCursorCoordinates();
-		SetCursorPosition(pos);
-
-		if (mUiState.mCursorPosition.mColumn == 0)
-		{
-			if (mUiState.mCursorPosition.mLine == 0)
-				return;
-
-			auto& line = mLines[mUiState.mCursorPosition.mLine];
-			auto& prevLine = mLines[mUiState.mCursorPosition.mLine - 1];
-			auto prevSize = mData.GetLineMaxColumn(mUiState.mCursorPosition.mLine - 1);
-			prevLine.insert(prevLine.end(), line.begin(), line.end());
-
-			ErrorMarkers etmp;
-			for (auto& i : mErrorMarkers)
-				etmp.insert(ErrorMarkers::value_type(i.first - 1 == mUiState.mCursorPosition.mLine ? i.first - 1 : i.first, i.second));
-			mErrorMarkers = std::move(etmp);
-
-			mData.RemoveLine(mUiState.mCursorPosition.mLine);
-			--mUiState.mCursorPosition.mLine;
-			mUiState.mCursorPosition.mColumn = prevSize;
-		}
-		else
-		{
-			auto& line = mLines[mUiState.mCursorPosition.mLine];
-			auto cindex = mData.GetCharacterIndex(pos) - 1;
-			auto cend = cindex + 1;
-			while (cindex > 0 && IsUTFSequence(line[cindex].mChar))
-				--cindex;
-
-			//if (cindex > 0 && TerminalData::UTF8CharLength(line[cindex].mChar) > 1)
-			//	--cindex;
-
-			--mUiState.mCursorPosition.mColumn;
-
-			while (cindex < line.size() && cend-- > cindex)
-			{
-				line.erase(line.begin() + cindex);
-			}
-		}
-
-		mData.SetTextChanged(true);
-
-		EnsureCursorVisible();
-	}
-#endif
-}
-
 void TerminalView::SelectWordUnderCursor()
 {
 	auto c = GetCursorPosition();
@@ -1594,36 +1251,15 @@ void TerminalView::Copy()
 
 void TerminalView::Cut()
 {
-	if (IsReadOnly())
-	{
-		Copy();
-	}
-	else
-	{
-		if (HasSelection())
-		{
-			Copy();
-			DeleteSelection();
-		}
-	}
+	Copy();
 }
 
 void TerminalView::Paste()
 {
-	if (IsReadOnly())
-		return;
-
 	auto clipText = ImGui::GetClipboardText();
 	if (clipText != nullptr && strlen(clipText) > 0)
 	{
-
-		if (HasSelection())
-		{
-			DeleteSelection();
-		}
-
-		// TODO: Remove paste?
-		//InsertText(clipText);
+		AddKeyboardInput(clipText);
 	}
 }
 
@@ -1763,28 +1399,46 @@ const TerminalView::Palette & TerminalView::GetRetroBluePalette()
 	return p;
 }
 
+void TerminalView::AddKeyboardInput(std::string input) {
+	for (char c : input) {
+		mKeyboardInputQueue.push(c);
+	}
+}
 
+
+void TerminalView::AddKeyboardInput(std::u16string input) {
+	for (char c : input) {
+		mKeyboardInputQueue.push(c);
+	}
+}
+
+void TerminalView::AddKeyboardInput(char input) {
+	mKeyboardInputQueue.push(input);
+}
+
+void TerminalView::AddKeyboardInput(const char * input) {
+	for (auto * p = input; *p != 0; ++p) {
+		mKeyboardInputQueue.push(*p);
+	}
+}
 
 
 ImWchar TerminalView::GetKeyboardInput()
 {
-	if (mInputQueueCharacters.empty()) {
+	if (mKeyboardInputQueue.empty()) {
 		throw std::underflow_error("No keyboard input to get. Check KeyboardInputAvailable() before calling.");
 	}
 	else {
-		auto item = mInputQueueCharacters.front();
-		mInputQueueCharacters.pop();
+		auto item = mKeyboardInputQueue.front();
+		mKeyboardInputQueue.pop();
 		return item;
 	}
 }
 
 bool TerminalView::KeyboardInputAvailable()
 {
-	return !mInputQueueCharacters.empty();
+	return !mKeyboardInputQueue.empty();
 }
-
-
-
 
 
 std::string TerminalView::GetSelectedText() const

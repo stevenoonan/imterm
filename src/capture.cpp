@@ -40,7 +40,6 @@ namespace imterm {
 
         if (!capture_window_init) {
             capture_window_init = true;
-            term_view.SetKeyboardInputAllowed(false);
         }
 
         
