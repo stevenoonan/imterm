@@ -7,3 +7,4 @@
 /.vs
 /.vscode
 /CMakeUserPresets.json
+/deps/conan
