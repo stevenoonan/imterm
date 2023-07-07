@@ -326,16 +326,21 @@ namespace imterm {
                 }
 
                 if (baud_int != -1) {
-                    serial_name = cbo_port_selection_data.get_selected_data().port;
 
-                    try {
-                        serial = new Serial(serial_name, baud_int);
-                        serial_init = true;
-                    }
-                    catch (const std::exception& e) {
-                        std::cerr << "Could not open port. " << e.what() << "\n";
-                        baud_int = -1;
-                        serial_init = false;
+                    serial_init = false;
+
+                    if (cbo_port_selection_data.item_is_selected()) {
+                        serial_name = cbo_port_selection_data.get_selected_data().port;
+
+                        try {
+                            serial = new Serial(serial_name, baud_int);
+                            serial_init = true;
+                        }
+                        catch (const std::exception& e) {
+                            std::cerr << "Could not open port. " << e.what() << "\n";
+                            baud_int = -1;
+
+                        }
                     }
 
                     if (serial_init) {
