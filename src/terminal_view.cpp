@@ -603,7 +603,14 @@ void TerminalView::Render()
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	static const int buf_length = 48;
 	char buf[buf_length];
-	snprintf(buf, 16, " %d [12:12:59]  ", globalLineMax);
+	int globalLineMaxDigits = 0;
+	int digitCountTemp = globalLineMax;
+	while (digitCountTemp) {
+		digitCountTemp /= 10;
+		globalLineMaxDigits++;
+	}
+	const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
+	snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
 	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
 	if (!mLines.empty())
@@ -675,7 +682,7 @@ void TerminalView::Render()
 			// Draw line number (right aligned)
 			std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
 			std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
-			snprintf(buf, buf_length, "%d  [%02d:%02d:%02d]  ", lineNo + 1, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
+			snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, lineNo + 1, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
 
 			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
 			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)TerminalData::PaletteIndex::LineNumber], buf);
