@@ -9,12 +9,16 @@
 //   the backend itself (imgui_impl_vulkan.cpp), but should PROBABLY NOT be used by your own engine/app code.
 // Read comments in imgui_impl_vulkan.h.
 
+#ifdef _WIN32
 #include <windows.h>
+#include "imgui_impl_win32.h"
+#else
+#define CONSOLE_MODE 1
+#endif
 
 #include "capture.h"
 
 #include "imgui.h"
-#include "imgui_impl_win32.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>          // printf, fprintf
@@ -357,8 +361,6 @@ static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
-
-//#define CONSOLE_MODE 1
 
 #ifdef CONSOLE_MODE
 int main(int, char**)
