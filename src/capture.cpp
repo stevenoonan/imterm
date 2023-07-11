@@ -206,8 +206,12 @@ namespace imterm {
             ImFont* font = ImGui::GetFont();
             line_height = ((style.FramePadding.y * 2) + font->FontSize + style.ItemSpacing.y);
             
-
-            extra_vertical_spacing = style.PopupBorderSize + (style.ItemSpacing.y * 4) + 1 + (style.FramePadding.y*2); // 4 calls to ImGui::Spacing(), 1 to ImGui::Separator();
+            extra_vertical_spacing = 
+                style.PopupBorderSize
+                + (style.ItemSpacing.y * 4)  // 4 calls to ImGui::Spacing()
+                + 1                          // 1 call  to ImGui::Separator();
+                + (style.FramePadding.y * 2) // top and bottom
+                + 1;                         // 1 extra needed at some DPIs
         }
 
         if (!show_port_selection) return;
