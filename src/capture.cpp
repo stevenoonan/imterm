@@ -42,10 +42,8 @@ namespace imterm {
             capture_window_init = true;
         }
 
-        
 
         ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar /* | ImGuiWindowFlags_MenuBar */);
-        ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
 
 #ifdef SHOW_MENU
         Menu();
@@ -137,7 +135,8 @@ namespace imterm {
         }
 
         ImGui::SameLine();
-        ImGui::SetCursorPosX(combo_data.get_pos_x_combo());
+        ImGui::SetCursorPosX(combo_data.get_input_x_position());
+        ImGui::SetNextItemWidth(combo_data.get_input_width());
 
         if (ImGui::BeginCombo(combo_data.get_hidden_label(), combo_data.get_preview_value(), combo_data.get_flags()))
         {
@@ -157,7 +156,11 @@ namespace imterm {
 
     void PortSelectionWindow(ImGuiID id) {
 
-        static const float input_x_offset = 138;
+        static float current_dpi_scale = -1.0f; // make invalid // 96 DPI
+        static float input_x_offset = 200;
+        static float input_width = 200;
+        static float line_height = 50;
+        static float extra_vertical_spacing = 30;
 
         static bool show_port_selection = true;
         static std::vector<serial::PortInfo> port_infos;
@@ -170,20 +173,50 @@ namespace imterm {
         static ComboData<flowcontrol_t> cbo_flow_control_data("Flow control", input_x_offset);
         static char baud_text[128] = "115200";
 
-        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, 
+        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, input_width,
             "A carriage return (CR) and line feed (LF) is needed\n"
             "for each new line of data. If the input data only\n"
             "only contains one or the other, select the mode\n"
             "that will add the missing element.");
 
+        static std::vector<ComboDataBase*> cbo_datas = {
+            &cbo_port_selection_data,
+            &cbo_data_bits_data,
+            &cbo_stop_bits_data,
+            &cbo_parity_data,
+            &cbo_flow_control_data,
+            &cbo_new_line_mode_data
+        };
+
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        
+        if (current_dpi_scale != viewport->DpiScale) {
+            current_dpi_scale = viewport->DpiScale;
+            ImVec2 text_size = ImGui::CalcTextSize(std::string(20, '0').c_str());
+            input_x_offset = text_size.x;
+            input_width = input_x_offset;
+
+            for (ComboDataBase* comboData : cbo_datas) {
+                comboData->set_input_x_position(input_x_offset);
+                comboData->set_input_width(input_x_offset);
+            }
+            
+            ImFont* font = ImGui::GetFont();
+            line_height = ((style.FramePadding.y * 2) + font->FontSize + style.ItemSpacing.y);
+            
+
+            extra_vertical_spacing = style.PopupBorderSize + (style.ItemSpacing.y * 4) + 1 + (style.FramePadding.y*2); // 4 calls to ImGui::Spacing(), 1 to ImGui::Separator();
+        }
 
         if (!show_port_selection) return;
 
         ImGui::OpenPopup("Setup");
 
-        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowSize(ImVec2(400, 325), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImVec2 center = viewport->GetCenter();
+        ImGui::SetNextWindowSize(ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height*10)+extra_vertical_spacing), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
         if (ImGui::BeginPopupModal("Setup", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 
@@ -297,7 +330,7 @@ namespace imterm {
             ImGui::Text("Baud ");
             ImGui::SameLine();
             ImGui::SetCursorPosX(input_x_offset);
-            
+            ImGui::SetNextItemWidth(input_width);
             ImGui::InputText("##Baud", baud_text, IM_ARRAYSIZE(baud_text));
 
             DisplayCombo(cbo_data_bits_data);

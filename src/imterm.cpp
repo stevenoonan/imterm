@@ -387,7 +387,22 @@ int __stdcall WinMain(
         return 1;
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+    // The width and height is overriden once we determine the font size and dpi scaling. See call to glfwSetWindowSize() below.
     GLFWwindow* window = glfwCreateWindow(1280, 720, "imterm", NULL, NULL);
+
+    // Get the primary monitor
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+
+    // Get the content scale (including DPI) of the monitor
+    float glfw_dpi_x_scale, glfw_dpi_y_scale;
+    glfwGetMonitorContentScale(monitor, &glfw_dpi_x_scale, &glfw_dpi_y_scale);
+
+    // Calculate DPI based on the content scale
+    const int dpi_base = 96;
+    int glfw_dpi = static_cast<int>(glfw_dpi_x_scale * dpi_base);  // Assuming 96 DPI as base
+
+    
 
     // Setup Vulkan
     if (!glfwVulkanSupported())
@@ -457,10 +472,13 @@ int __stdcall WinMain(
 
     // If font does not exist, the default will be used.
     std::string font_path = "JetBrainsMono-Medium.ttf";
+    ImFont* font = NULL;
+    float font_size = 16.0f * glfw_dpi_y_scale;
+    font_size = std::round(font_size);
     if (std::filesystem::exists(font_path)) {
-        ImFont* font = io.Fonts->AddFontFromFileTTF("JetBrainsMono-Medium.ttf", 20.0f);
+        font = io.Fonts->AddFontFromFileTTF(font_path.c_str(), font_size);
         IM_ASSERT(font != NULL);
-    }
+    }    
 
     // Upload Fonts
     {
@@ -528,13 +546,24 @@ int __stdcall WinMain(
 
 #ifdef IMGUI_HAS_VIEWPORT
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        //viewport->Flags
-        if (once) {
-            //once = false;
-            ImGui::SetNextWindowPos(viewport->WorkPos);
-            ImGui::SetNextWindowSize(viewport->WorkSize);
-           // ImGui::Setnex
+        static float current_dpi_scale = 1.0f; // 96 DPI
+
+        if (current_dpi_scale != viewport->DpiScale) {
+            current_dpi_scale = viewport->DpiScale;
+            style.ScaleAllSizes(current_dpi_scale);
         }
+
+        if (once) {
+            once = false;
+            auto dpi_scale = viewport->DpiScale;
+            ImVec2 text_size = ImGui::CalcTextSize(std::string(150, '0').c_str());
+            glfwSetWindowSize(window, text_size.x, text_size.y * 40);
+        }
+
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+
+
 #else 
         ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);

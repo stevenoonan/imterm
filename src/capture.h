@@ -69,27 +69,108 @@ namespace imterm {
 
     };
 
-    template<typename T>
-    class ComboData {
+    class LabeledInput {
 
-        const size_t NO_SELECTION = SIZE_MAX;
-
-        std::vector<ComboDataItem<T>> _items;
-        size_t _selected_index = NO_SELECTION;
+    protected: 
+        float _input_x_position;
+        float _input_width;
         std::string _label;
         std::string _hidden_label;
         std::string _toml_id;
         ImGuiComboFlags _flags = 0;
-        float _pos_x_combo;
         std::string _tool_tip;
 
     public:
 
-        ComboData(std::string label, float pos_x_combo, std::string tool_tip = std::string())
-            : _label(label), _hidden_label(std::string("##").append(label)), _toml_id(label), _pos_x_combo(pos_x_combo), _tool_tip(tool_tip)
+        LabeledInput(std::string label, float input_x_position=200, float input_width = 200, std::string tool_tip = std::string()) :
+            _input_x_position(input_x_position),
+            _input_width(input_width),
+            _label(label),
+            _hidden_label(std::string("##").append(label)),
+            _toml_id(label),
+            _tool_tip(tool_tip)
         {
             std::transform(_toml_id.begin(), _toml_id.end(), _toml_id.begin(), ::tolower);
             std::replace(_toml_id.begin(), _toml_id.end(), ' ', '_');
+        }
+
+
+        float get_input_x_position() const {
+            return _input_x_position;
+        }
+
+        void set_input_x_position(float new_input_x_position) {
+            _input_x_position = new_input_x_position;
+        }
+
+        float get_input_width() const {
+            return _input_width;
+        }
+
+        void set_input_width(float new_input_width) {
+            _input_width = new_input_width;
+        }
+
+        std::string get_tool_tip() const {
+            return _tool_tip;
+        }
+
+        int get_flags() const {
+            return _flags;
+        }
+
+        const char* get_label() const {
+            return _label.c_str();
+        }
+
+        const char* get_hidden_label() const {
+            return _hidden_label.c_str();
+        }
+
+
+    };
+
+    class ComboDataBase: public LabeledInput {
+    protected:
+
+        const size_t NO_SELECTION = SIZE_MAX;
+        size_t _selected_index = NO_SELECTION;
+
+    public:
+
+        ComboDataBase(std::string label, float input_x_position=200, float input_width=200, std::string tool_tip = std::string()) : LabeledInput(label, input_x_position, input_width, tool_tip) {}
+
+
+        virtual size_t size() const = 0;
+
+        virtual int get_selected_index() const = 0;
+
+        virtual void set_selected_index(size_t index) = 0;
+
+        virtual size_t set_selected_item(toml::node_view<toml::node> node) = 0;
+
+        virtual void put_selected_item(toml::table* tbl) = 0;
+
+        virtual bool index_is_valid(size_t index) const = 0;
+
+        virtual bool item_is_selected() const = 0;
+
+        virtual const char* get_preview_value() const = 0;
+
+    };
+
+    template<typename T>
+    class ComboData : public ComboDataBase {
+
+
+        std::vector<ComboDataItem<T>> _items;
+
+    public:
+
+        ComboData(std::string label, float input_x_position = 200, float input_width = 200, std::string tool_tip = std::string())
+            : ComboDataBase(label, input_x_position, input_width, tool_tip)
+        {
+
         }
 
         void set_items(std::vector<ComboDataItem<T>> new_items) {
@@ -132,10 +213,6 @@ namespace imterm {
             return _items[index];
         }
 
-        float get_pos_x_combo() const {
-            return _pos_x_combo;
-        }
-
         size_t size() const {
             return _items.size();
         }
@@ -148,10 +225,6 @@ namespace imterm {
             return _selected_index;
         }
 
-        std::string get_tool_tip() const {
-            return _tool_tip;
-        }
-        
         void set_selected_index(size_t index) {
             if (index == NO_SELECTION) {
                 if (_selected_index != NO_SELECTION) {
@@ -238,14 +311,6 @@ namespace imterm {
             return index_is_valid(_selected_index);
         }
 
-        const char* get_label() const {
-            return _label.c_str();
-        }
-
-        const char* get_hidden_label() const {
-            return _hidden_label.c_str();
-        }
-
         const char* get_preview_value() const {
             if (item_is_selected()) {
                 return _items[_selected_index].get_display_c_str();
@@ -260,10 +325,6 @@ namespace imterm {
             } else {
                 throw std::out_of_range("no item is selected");
             }
-        }
-
-        int get_flags() const {
-            return _flags;
         }
 
     };
