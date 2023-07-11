@@ -1,6 +1,8 @@
 #if defined(_WIN32)
 
 /*
+ *  Extended by Stephen Noonan, 2023
+ * 
  * Copyright (c) 2014 Craig Lilley <cralilley@gmail.com>
  * This software is made available under the terms of the MIT licence.
  * A copy of the licence can be obtained from:
@@ -14,6 +16,7 @@
 #include <initguid.h>
 #include <devguid.h>
 #include <cstring>
+#include <algorithm>
 
 using serial::PortInfo;
 using std::vector;
@@ -145,6 +148,13 @@ serial::list_ports()
 	}
 
 	SetupDiDestroyDeviceInfoList(device_info_set);
+
+	// Sort (so that e.g. COM12 comes after COM2)
+	std::sort(devices_found.begin(), devices_found.end(), [](const PortInfo& a, const PortInfo& b) {
+		int aNum = std::stoi(a.port.substr(3)); // Assuming 'port' always starts with "COM"
+		int bNum = std::stoi(b.port.substr(3));
+		return aNum < bNum;
+		});
 
 	return devices_found;
 }
