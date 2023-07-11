@@ -8,8 +8,7 @@ endif()
 
 cmake_policy(SET CMP0117 OLD)
 
-# Copy font to build directory, it must placed before any targets are defined.
-configure_file("resources/fonts/JetBrainsMono-Medium.ttf" ${CMAKE_BINARY_DIR} COPYONLY)
+
 
 
 PROJECT(imterm LANGUAGES C CXX)
@@ -121,6 +120,9 @@ if (IMGUI_SHOW_DEMO_WINDOW)
     target_compile_definitions(imterm PUBLIC IMGUI_SHOW_DEMO_WINDOW)
 endif()
 
-
+add_custom_target(copy_font 
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf" ${CMAKE_BINARY_DIR}/$<CONFIG>
+)
+add_dependencies(imterm copy_font)
 
 
