@@ -121,7 +121,7 @@ if (IMGUI_SHOW_DEMO_WINDOW)
 endif()
 
 add_custom_target(copy_font 
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf" ${CMAKE_BINARY_DIR}/$<CONFIG>
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf" "${CMAKE_BINARY_DIR}/$<CONFIG>/JetBrainsMono-Medium.ttf"
 )
 add_dependencies(imterm copy_font)
 
