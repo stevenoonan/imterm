@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <codecvt>
+#include <locale>
 
 #include "serial/impl/win.h"
 

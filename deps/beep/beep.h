@@ -28,6 +28,10 @@
 extern "C" {
 #endif
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#include <windows.h>
+#endif
+
 int beep(int freq, int ms);
 
 
