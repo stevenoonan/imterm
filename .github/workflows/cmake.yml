@@ -50,7 +50,7 @@ jobs:
       run: cmake -B ${{github.workspace}}/build --preset conan-release
       
     - name: Build
-      run: cmake --build ${{github.workspace}}/build
+      run: cmake --build ${{github.workspace}}/build --parallel $(nproc)
     
     #- name: Test
     #  working-directory: ${{github.workspace}}/build
