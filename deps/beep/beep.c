@@ -8,7 +8,7 @@ int beep(int freq, int ms) { return Beep(freq, ms); }
  * mode at 8kHz, mono, request for 20ms latency. Device is opened on first call
  * and never closed. */
 #include <unistd.h>
-#include <asoundlib.h>
+#include <../include/alsa/asoundlib.h>
 int beep(int freq, int ms) {
     static snd_pcm_t* pcm = NULL;
     if (pcm == NULL) {
