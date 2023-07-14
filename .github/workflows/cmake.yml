@@ -27,7 +27,7 @@ jobs:
       run: conan --version
       
     - name: Create default profile
-      run: conan profile new default --detect
+      run: conan profile default detect --force
       
     - name: Update profile
       run: conan profile update settings.compiler.libcxx=libstdc++20 default
