@@ -603,9 +603,9 @@ void TerminalView::Render()
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	static const int buf_length = 48;
 	char buf[buf_length];
-	int globalLineMaxDigits = 0;
+	uint8_t globalLineMaxDigits = 0;
 	int digitCountTemp = globalLineMax;
-	while (digitCountTemp) {
+	while (digitCountTemp && globalLineMaxDigits < 13) {
 		digitCountTemp /= 10;
 		globalLineMaxDigits++;
 	}
