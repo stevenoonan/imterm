@@ -21,7 +21,7 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Get Conan
-      uses: turtlebrowser/get-conan
+      uses: turtlebrowser/get-conan@main
       
     - name: Show Conan Version
       run: conan --version
