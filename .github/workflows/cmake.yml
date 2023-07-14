@@ -52,7 +52,7 @@ jobs:
       run: whoami
       
     - name: Change ownerships to runner
-      run: find . \( -user root \) -exec chown runner {} +
+      run: find . \( -user root \) -exec sudo chown runner {} +
       
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
