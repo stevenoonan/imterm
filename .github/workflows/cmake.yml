@@ -20,6 +20,12 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
+    - name: Create virtual environment
+      run: python -m venv conan_env
+      
+    - name: Activate virtual environment
+      run: source conan_env/bin/activate
+    
     - name: Get Conan
       uses: turtlebrowser/get-conan@main
       
@@ -36,8 +42,8 @@ jobs:
     - name: Install dependencies
       #run: conan install . -s build_type=${{env.BUILD_TYPE}} --install-folder=${{github.workspace}}/build
       run: |
-         user_conan_path=$(which conan)
-         sudo $user_conan_path install . --output-folder=build --build=missing -c tools.system.package_manager:mode=install
+         #user_conan_path=$(which conan)
+         sudo -E conan install . --output-folder=build --build=missing -c tools.system.package_manager:mode=install
       
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
