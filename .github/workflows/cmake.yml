@@ -52,13 +52,16 @@ jobs:
       run: whoami
       
     - name: Change ownerships to runner
-      run: find . \( -user root \) -exec sudo chown runner {} +
+      run: sudo chown -R runner:docker .
       
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       #run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
       run: cmake --preset conan-release
+      
+    - name: Change ownerships to runner
+      run: sudo chown -R runner:docker .
       
     - name: ls -laR build
       run: ls -laR build
