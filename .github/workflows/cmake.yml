@@ -31,7 +31,6 @@ jobs:
       run: |
         conan_profile_path=$(conan profile path default)
         sed -i "s/^compiler.cppstd=.*/compiler.cppstd=20/" "$conan_profile_path"
-        sed -i "s/^compiler.libcxx=.*/compiler.cppstd=libstdc++20/" "$conan_profile_path"
         conan profile show
       
     - name: Install dependencies
