@@ -60,8 +60,8 @@ jobs:
       #run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
       run: cmake --preset conan-release
       
-    - name: ls -laR
-      run: ls -laR
+    - name: ls -laR build
+      run: ls -laR build
       
     - name: Build
       # Build your program with the given configuration
