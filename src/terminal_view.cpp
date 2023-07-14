@@ -610,7 +610,7 @@ void TerminalView::Render()
 		globalLineMaxDigits++;
 	}
 	const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
-	snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
+	int snpf_len = snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
 	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
 	if (!mLines.empty())
