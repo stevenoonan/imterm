@@ -3,6 +3,7 @@ import os
 from conan import ConanFile
 from conan.tools.cmake import CMakeToolchain, CMake, CMakeDeps, cmake_layout
 from conan.tools.files import copy
+import platform
 
 
 class ImGuiExample(ConanFile):
@@ -15,6 +16,8 @@ class ImGuiExample(ConanFile):
         self.requires("imgui/cci.20230105+1.89.2.docking")
         self.requires("vulkan-loader/1.3.239.0")
         self.requires("vulkan-headers/1.3.239.0")
+        if self.settings.os == "Linux":
+            self.requires("libalsa/1.2.7.2")
 
     def generate(self):
 

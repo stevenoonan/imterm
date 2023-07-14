@@ -5,6 +5,12 @@ if(APPLE)
     find_library(AUDIOUNIT_LIBRARY AudioUnit)
 elseif(UNIX AND NOT APPLE)
     find_library(ASOUND_LIBRARY asound)
+
+    # Get the directory path of the found library
+    get_filename_component(ASOUND_LIBRARY_DIR ${ASOUND_LIBRARY} DIRECTORY)
+
+    message("ASOUND_LIBRARY_DIR: ${ASOUND_LIBRARY_DIR}")
+    include_directories(${ASOUND_LIBRARY_DIR}/../include)
 else()
     # Windows
 endif()

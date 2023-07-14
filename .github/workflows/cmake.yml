@@ -1,0 +1,60 @@
+name: CMake
+
+on:
+  push:
+    branches: [ "main", "actions-test" ]
+  pull_request:
+    branches: [ "main", "actions-test" ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
+    # You can convert this to a matrix build if you need cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Create virtual environment
+      run: python -m venv conan_env
+      
+    - name: Activate virtual environment
+      run: source conan_env/bin/activate
+    
+    - name: Get Conan
+      uses: turtlebrowser/get-conan@main
+      
+    - name: Create default profile
+      run: conan profile detect --force
+      
+    - name: Update Conan profile for C++ 20
+      run: |
+        conan_profile_path=$(conan profile path default)
+        sed -i "s/^compiler.cppstd=.*/compiler.cppstd=20/" "$conan_profile_path"
+        conan profile show
+      
+    - name: Install dependencies
+      run: |
+         user_conan_path=$(which conan)
+         sudo -E $user_conan_path install . --build=missing -c tools.system.package_manager:mode=install
+      
+    - name: Change ownerships to runner
+      run: sudo chown -R runner:docker .
+      
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build --preset conan-release
+      
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --parallel $(nproc)
+    
+    #- name: Test
+    #  working-directory: ${{github.workspace}}/build
+    #  # Execute tests defined by the CMake configuration.
+    #  # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+    #  run: ctest -C ${{env.BUILD_TYPE}}
+

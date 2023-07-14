@@ -128,10 +128,10 @@ namespace imterm {
     template<typename T>
     void DisplayCombo(ComboData<T>& combo_data) {
 
-        ImGui::Text(combo_data.get_label());
+        ImGui::TextUnformatted(combo_data.get_label());
 
         if (!combo_data.get_tool_tip().empty() && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(combo_data.get_tool_tip().c_str());
+            ImGui::SetTooltip("%s", combo_data.get_tool_tip().c_str());
         }
 
         ImGui::SameLine();
