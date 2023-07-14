@@ -51,8 +51,8 @@ jobs:
     - name: whoami
       run: whoami
       
-    - name: ls -laR
-      run: ls -laR
+    - name: Change ownerships to runner
+      run: find . \( -user root \) -exec chown runner {} +
       
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
