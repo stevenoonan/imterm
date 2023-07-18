@@ -43,7 +43,11 @@
 #include <sstream>
 #include <exception>
 #include <stdexcept>
+#include <chrono>
+#include <tuple>
 #include <serial/v8stdint.h>
+
+using namespace std::chrono;
 
 #define THROW(exceptionClass, message) throw exceptionClass(__FILE__, \
 __LINE__, (message) )
@@ -769,6 +773,35 @@ struct PortInfo {
  */
 std::vector<PortInfo>
 list_ports();
+
+
+/* Lists the serial ports available on the system, using a cached list if the
+ * given milliseconds is less than the time elapsed since this function was
+ * previously called.
+ *
+ * Returns a vector of available serial ports, each represented
+ * by a serial::PortInfo data structure:
+ *
+ * \return vector of serial::PortInfo.
+ */
+inline
+std::tuple<bool, std::vector<PortInfo>>
+list_ports_cached(std::chrono::milliseconds ms_interval) {
+
+    static system_clock::time_point last_port_refresh_time = system_clock::now() - 100s;
+    static std::vector<PortInfo> cached_list;
+
+    bool data_is_new = false;
+
+    if ((system_clock::now() - last_port_refresh_time) > ms_interval) {
+        last_port_refresh_time = system_clock::now();
+        cached_list = list_ports();
+        data_is_new = true;
+    }
+
+    return std::make_tuple(data_is_new, cached_list);
+
+}
 
 } // namespace serial
 
