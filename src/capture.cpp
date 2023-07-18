@@ -431,7 +431,7 @@ namespace imterm {
 
             if (connection_message != "") {
                 ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(connection_message.c_str()).x) * 0.5f);
-                ImGui::Text(connection_message.c_str());
+                ImGui::TextUnformatted(connection_message.c_str());
             }
 
             static std::vector<imterm::ComboDataItem<serial::PortInfo>> port_items;
@@ -703,7 +703,7 @@ namespace imterm {
 
             std::string attempt_string = std::string("Attempting to reconnect to " + serial->getPort());
             ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(attempt_string.c_str()).x) * 0.5f);
-            ImGui::Text(attempt_string.c_str());
+            ImGui::TextUnformatted(attempt_string.c_str());
 
             if ((system_clock::now() - last_attempt_time) > 1s) {
 
