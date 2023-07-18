@@ -6,9 +6,11 @@
 #include <stdexcept>
 #include <chrono>
 #include <filesystem>
+#include "serial/serial.h"
 
 using namespace std::chrono;
 using namespace std::literals;
+using namespace serial;
 
 #include "imgui.h"
 #include "toml.hpp"
@@ -19,6 +21,14 @@ namespace imterm {
     void CaptureWindowCreate(void);
 
     void PortSelectionWindow(ImGuiID id);
+
+    void ReconnectionWindow(ImGuiID id);
+
+    void CloseSerialPort();
+
+    void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
+        bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
+        flowcontrol_t flowcontrol);
 
     void Menu();
 
@@ -180,13 +190,22 @@ namespace imterm {
             // the same id_str as the id_str of the selected item. If so, we
             // want to preserve the selection into the new set of items.
             if (selected_item != nullptr) {
+
+                // If we don't find the equivalent item in the new list, selected_item will remain nullptr.
+                ComboDataItem<T>* was_selected_item = selected_item;
+                selected_item = nullptr;
+
                 for (ComboDataItem<T>& new_item: new_items) {
-                    if (new_item.get_display_str() == selected_item->get_display_str()) {
+                    if (new_item.get_display_str() == was_selected_item->get_display_str()) {
+                        // Equivalent item is found, so mark as selected.
                         selected_item = &new_item;
                         break;
                     }
                 }
-            } else {
+            } 
+            
+            if (selected_item == nullptr) {
+
                 // If there is no selected item this means we can set a default
                 // Search through the list and ensure at most one item is
                 // selected.
@@ -228,12 +247,14 @@ namespace imterm {
         void set_selected_index(size_t index) {
             if (index == NO_SELECTION) {
                 if (_selected_index != NO_SELECTION) {
-                    _items[_selected_index].set_is_selected(false);
+                    if (index_is_valid(_selected_index)) {
+                        _items[_selected_index].set_is_selected(false);
+                    }
                     _selected_index = NO_SELECTION;
                 }
             } else if (index < _items.size()) {
                 if (index != _selected_index) {
-                    if (_selected_index != NO_SELECTION) {
+                    if (_selected_index != NO_SELECTION && index_is_valid(_selected_index)) {
                         _items[_selected_index].set_is_selected(false);
                     }
                     _selected_index = index;
