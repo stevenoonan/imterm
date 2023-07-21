@@ -37,15 +37,15 @@ namespace imterm {
     static std::string serial_name = "[Not Connected]";
     static std::string connection_message = "";
     static bool auto_reconnect = true;
+    static bool render_view = false;
     
-    static TerminalData term_data;
+    static TerminalLogger term_log({.Enabled=false});
+    static TerminalData term_data(&term_log);
     static TerminalState term_state(term_data, TerminalState::NewLineMode::Strict);
-    static TerminalView term_view(term_data, term_state);
+    static TerminalView term_view(term_data, term_state, TerminalView::Options());
     static auto settings = CaptureSettings();
 
     constexpr std::chrono::seconds port_cache_duration = 1s;
-
-    
 
     void CaptureWindowCreate(void) {
 
@@ -60,7 +60,7 @@ namespace imterm {
 
         Menu();
 
-        term_view.Render("TerminalView");
+        if (render_view) term_view.Render("TerminalView");
         ImGui::End();
 
         if (serial && serial->isOpen()) {
@@ -204,6 +204,7 @@ namespace imterm {
                         if (ImGui::MenuItem(info.port.c_str(), NULL, current_port, true)) {
                             if (!current_port) {
                                 try {
+                                    term_log.SetPostfix(info.port.c_str());
                                     serial->setPort(info.port.c_str());
                                 }
                                 catch (const serial::IOException& ex) {
@@ -221,34 +222,79 @@ namespace imterm {
                 ImGui::EndMenu();
             }
 
-            auto new_line_mode = term_state.GetNewLineMode();
-            const char * line_mode_text;
-            if (new_line_mode == TerminalState::NewLineMode::AddCrToLf) {
-                line_mode_text = "+LF   ";
-            }
-            else if (new_line_mode == TerminalState::NewLineMode::AddLfToCr) {
-                line_mode_text = "+CR   ";
-            } else {
-                line_mode_text = "Strict";
-                new_line_mode = TerminalState::NewLineMode::Strict;
-            }
+            
+            if (ImGui::BeginMenu("Options")) {
 
-            if (ImGui::BeginMenu(line_mode_text))
-            {
-                ImGui::MenuItem("New Line Mode", NULL, false, false);
 
-                if (ImGui::MenuItem("Strict", NULL, (new_line_mode== TerminalState::NewLineMode::Strict))) {
-                    term_state.SetNewLineMode(TerminalState::NewLineMode::Strict);
+                if (ImGui::BeginMenu("New Line Mode"))
+                {
+
+                    auto new_line_mode = term_state.GetNewLineMode();
+                    const char* line_mode_text;
+                    if (new_line_mode == TerminalState::NewLineMode::AddCrToLf) {
+                        line_mode_text = "+LF   ";
+                    }
+                    else if (new_line_mode == TerminalState::NewLineMode::AddLfToCr) {
+                        line_mode_text = "+CR   ";
+                    }
+                    else {
+                        line_mode_text = "Strict";
+                        new_line_mode = TerminalState::NewLineMode::Strict;
+                    }
+
+                    //ImGui::MenuItem("New Line Mode", NULL, false, false);
+
+                    if (ImGui::MenuItem("Strict", NULL, (new_line_mode == TerminalState::NewLineMode::Strict))) {
+                        term_state.SetNewLineMode(TerminalState::NewLineMode::Strict);
+                    }
+                    if (ImGui::MenuItem("Add CR to LF", NULL, (new_line_mode == TerminalState::NewLineMode::AddCrToLf))) {
+                        term_state.SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
+                    }
+                    if (ImGui::MenuItem("ADD LF to CR", NULL, (new_line_mode == TerminalState::NewLineMode::AddLfToCr))) {
+                        term_state.SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
+                    }
+
+                    ImGui::EndMenu();
                 }
-                if (ImGui::MenuItem("Add CR to LF", NULL, (new_line_mode == TerminalState::NewLineMode::AddCrToLf))) {
-                    term_state.SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
+
+                if (ImGui::BeginMenu("View"))
+                {
+                    auto ops = term_view.GetOptions();
+                    if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
+                        ops.LineNumbers = !ops.LineNumbers;
+                        term_view.SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
+                        ops.TimeStamps = !ops.TimeStamps;
+                        term_view.SetOptions(ops);
+                    }
+
+                    ImGui::EndMenu();
                 }
-                if (ImGui::MenuItem("ADD LF to CR", NULL, (new_line_mode == TerminalState::NewLineMode::AddLfToCr))) {
-                    term_state.SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
+
+                if (ImGui::BeginMenu("Log"))
+                {
+                    auto ops = term_log.GetOptions();
+                    if (ImGui::MenuItem("Enabled", NULL, ops.Enabled, true)) {
+                        ops.Enabled = !ops.Enabled;
+                        term_log.SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
+                        ops.LineNumbers = !ops.LineNumbers;
+                        term_log.SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
+                        ops.TimeStamps = !ops.TimeStamps;
+                        term_log.SetOptions(ops);
+                    }
+
+                    ImGui::EndMenu();
                 }
 
                 ImGui::EndMenu();
             }
+            
+            
 
             if (serial && serial->isOpen()) {
 
@@ -320,6 +366,11 @@ namespace imterm {
                 flowcontrol
             );
             serial_init = ConnectionStage::connected;
+            render_view = true;
+            term_log.SetPostfix(port);
+            auto ops = term_log.GetOptions();
+            ops.Enabled = true;
+            term_log.SetOptions(ops);
         }
         catch (const std::exception& e) {
             std::cerr << "Could not open port. " << e.what() << "\n";

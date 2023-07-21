@@ -22,7 +22,7 @@
  * liberal way here. Only a subset of all A-Z, a-z characters actually do
  * anything.
  *
- * The length of (3) continues until matching critera for (4) is found.
+ * The length of (3) continues until matching criteria for (4) is found.
  * After (4) is found, the data will be parsed to determine if it truly is
  * a valid sequence. If not, the data
  *

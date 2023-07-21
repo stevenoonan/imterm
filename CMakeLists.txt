@@ -97,6 +97,8 @@ set(IMTERM_SRCS
 	${SRC_DIR}/terminal_state.h
 	${SRC_DIR}/terminal_view.cpp
 	${SRC_DIR}/terminal_view.h
+	${SRC_DIR}/terminal_logger.cpp
+	${SRC_DIR}/terminal_logger.h
 	${SRC_DIR}/vector_timed.h
 )
 

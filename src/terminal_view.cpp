@@ -17,6 +17,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h" // for imGui::GetCurrentWindow()
 
+namespace imterm {
 
 template<class InputIt1, class InputIt2, class BinaryPredicate>
 bool equals(InputIt1 first1, InputIt1 last1,
@@ -30,7 +31,7 @@ bool equals(InputIt1 first1, InputIt1 last1,
 	return first1 == last1 && first2 == last2;
 }
 
-TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState)
+TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState, Options aOptions)
 	: mLineSpacing(1.0f)
 	, mWithinRender(false)
 	, mScrollToCursor(false)
@@ -51,6 +52,7 @@ TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminal
 	, mData(aTerminalData)
 	, mLines(aTerminalData.mLines)
 	, mTermState(aTerminalState)
+	, mOptions(aOptions)
 {
 	SetPalette(GetDarkPalette());
 }
@@ -223,7 +225,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 	while (cindex > 0 && isspace(line[cindex].mChar))
 		--cindex;
 
-	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
 	while (cindex > 0)
 	{
 		auto c = line[cindex].mChar;
@@ -234,7 +236,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 				cindex++;
 				break;
 			}
-			if (cstart != (TerminalData::PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
+			if (cstart != (PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
 				break;
 		}
 		--cindex;
@@ -255,12 +257,12 @@ Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
 		return at;
 
 	bool prevspace = (bool)isspace(line[cindex].mChar);
-	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
 	while (cindex < (int)line.size())
 	{
 		auto c = line[cindex].mChar;
 		auto d = TerminalData::UTF8CharLength(c);
-		if (cstart != (TerminalData::PaletteIndex)line[cindex].mColorIndex)
+		if (cstart != (PaletteIndex)line[cindex].mColorIndex)
 			break;
 
 		if (prevspace != !!isspace(c))
@@ -365,15 +367,15 @@ std::string TerminalView::GetWordAt(const Coordinates & aCoords) const
 	return r;
 }
 
-ImU32 TerminalView::GetGlyphColor(const TerminalData::Glyph & aGlyph) const
+ImU32 TerminalView::GetGlyphColor(const Glyph & aGlyph) const
 {
 	if (!mColorizerEnabled)
-		return mPalette[(int)TerminalData::PaletteIndex::Default];
+		return mPalette[(int)PaletteIndex::Default];
 
 	auto const color = mPalette[(int)aGlyph.mColorIndex];
 	if (aGlyph.mPreprocessor)
 	{
-		const auto ppcolor = mPalette[(int)TerminalData::PaletteIndex::Preprocessor];
+		const auto ppcolor = mPalette[(int)PaletteIndex::Preprocessor];
 		const int c0 = ((ppcolor & 0xff) + (color & 0xff)) / 2;
 		const int c1 = (((ppcolor >> 8) & 0xff) + ((color >> 8) & 0xff)) / 2;
 		const int c2 = (((ppcolor >> 16) & 0xff) + ((color >> 16) & 0xff)) / 2;
@@ -557,7 +559,7 @@ void TerminalView::Render()
 	mCharAdvance = ImVec2(fontSize, ImGui::GetTextLineHeightWithSpacing() * mLineSpacing);
 
 	/* Update palette with the current alpha from style */
-	for (int i = 0; i < (int)TerminalData::PaletteIndex::Max; ++i)
+	for (int i = 0; i < (int)PaletteIndex::Max; ++i)
 	{
 		auto color = ImGui::ColorConvertU32ToFloat4(mPaletteBase[i]);
 		color.w *= ImGui::GetStyle().Alpha;
@@ -601,17 +603,38 @@ void TerminalView::Render()
 	
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
-	static const int buf_length = 48;
-	char buf[buf_length];
+	static const int margin_work_buf_length = 48;
+	char margin_work_buf[margin_work_buf_length];
+	int mTextStart = mLeftMargin;
+
 	uint8_t globalLineMaxDigits = 0;
-	int digitCountTemp = globalLineMax;
-	while (digitCountTemp && globalLineMaxDigits < 13) {
-		digitCountTemp /= 10;
-		globalLineMaxDigits++;
+
+	const char* marginLineNumStringFormat = "%0*d ";
+	const char* marginTimeStampStringFormat = "%02d:%02d:%02d ";
+
+	if (mOptions.LineNumbers) {
+		
+		int digitCountTemp = globalLineMax;
+		while (digitCountTemp && globalLineMaxDigits < 13) {
+			digitCountTemp /= 10;
+			globalLineMaxDigits++;
+		}
+		
+		int snpf_len = snprintf(margin_work_buf, margin_work_buf_length, marginLineNumStringFormat, globalLineMaxDigits, globalLineMax);
+		mTextStart += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
 	}
-	const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
-	int snpf_len = snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
-	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
+
+	if (mOptions.TimeStamps) {
+		
+		int snpf_len = snprintf(margin_work_buf, margin_work_buf_length, marginTimeStampStringFormat, 12, 12, 59);
+		mTextStart += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
+	}
+
+
+	//const char* marginTimeStampStringFormat = "%02d:%02d:%02d ";
+	//const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
+	//int snpf_len = snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
+	//mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
 	if (!mLines.empty())
 	{
@@ -646,7 +669,7 @@ void TerminalView::Render()
 			{
 				ImVec2 vstart(lineStartScreenPos.x + mTextStart + sstart, lineStartScreenPos.y);
 				ImVec2 vend(lineStartScreenPos.x + mTextStart + ssend, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(vstart, vend, mPalette[(int)TerminalData::PaletteIndex::Selection]);
+				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
 			}
 
 			// Draw breakpoints
@@ -655,7 +678,7 @@ void TerminalView::Render()
 			if (mBreakpoints.count(lineNo + 1) != 0)
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::Breakpoint]);
+				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::Breakpoint]);
 			}
 
 			// Draw error markers
@@ -663,7 +686,7 @@ void TerminalView::Render()
 			if (errorIt != mErrorMarkers.end())
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::ErrorMarker]);
+				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::ErrorMarker]);
 
 				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
 				{
@@ -680,12 +703,28 @@ void TerminalView::Render()
 			}
 
 			// Draw line number (right aligned)
-			std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
-			std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
-			snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, lineNo + 1, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
+			char* margin_work_buf_ptr = margin_work_buf;
+			int margin_work_buf_remainder = margin_work_buf_length;
+			if (mOptions.LineNumbers) {
+				int len = snprintf(margin_work_buf_ptr, margin_work_buf_remainder, marginLineNumStringFormat, globalLineMaxDigits, lineNo + 1);
+				if (len > 0) {
+					margin_work_buf_ptr += len;
+					margin_work_buf_remainder -= len;
+				}
+			}
 
-			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)TerminalData::PaletteIndex::LineNumber], buf);
+			if (mOptions.TimeStamps) {
+				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
+				std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
+				int len = snprintf(margin_work_buf_ptr, margin_work_buf_remainder, marginTimeStampStringFormat, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
+				if (len > 0) {
+					margin_work_buf_ptr += len;
+					margin_work_buf_remainder -= len;
+				}
+			}
+			
+			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
+			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], margin_work_buf);
 
 			mUiState.mCursorPosition = mTermState.getPositionRelative(mLines.size());
 
@@ -697,8 +736,8 @@ void TerminalView::Render()
 				if (!HasSelection())
 				{
 					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y);
-					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? TerminalData::PaletteIndex::CurrentLineFill : TerminalData::PaletteIndex::CurrentLineFillInactive)]);
-					drawList->AddRect(start, end, mPalette[(int)TerminalData::PaletteIndex::CurrentLineEdge], 1.0f);
+					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? PaletteIndex::CurrentLineFill : PaletteIndex::CurrentLineFillInactive)]);
+					drawList->AddRect(start, end, mPalette[(int)PaletteIndex::CurrentLineEdge], 1.0f);
 				}
 
 				// Render the cursor
@@ -714,7 +753,7 @@ void TerminalView::Render()
 
 						ImVec2 cstart(textScreenPos.x + cx, lineStartScreenPos.y);
 						ImVec2 cend(textScreenPos.x + cx + width, lineStartScreenPos.y + mCharAdvance.y);
-						drawList->AddRectFilled(cstart, cend, mPalette[(int)TerminalData::TerminalData::PaletteIndex::Cursor]);
+						drawList->AddRectFilled(cstart, cend, mPalette[(int)PaletteIndex::Cursor]);
 						if (elapsed > 800)
 							mStartTime = timeEnd;
 					}
@@ -722,7 +761,7 @@ void TerminalView::Render()
 			}
 
 			// Render colorized text
-			auto prevColor = line.empty() ? mPalette[(int)TerminalData::TerminalData::PaletteIndex::Default] : GetGlyphColor(line[0]);
+			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
 			ImVec2 bufferOffset;
 
 			for (int i = 0; i < line.size();)
@@ -813,7 +852,7 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	mData.SetTextChanged(false);
 	mCursorPositionChanged = false;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)TerminalData::PaletteIndex::Background]));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
 		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
@@ -1527,4 +1566,6 @@ int TerminalView::GetPageSize() const
 {
 	auto height = ImGui::GetWindowHeight() - 20.0f;
 	return (int)floor(height / mCharAdvance.y);
+}
+
 }
