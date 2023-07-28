@@ -85,7 +85,7 @@ namespace imterm {
 			AddLfToCr
 		};
 
-		TerminalState(TerminalData& aTerminalData, NewLineMode aNewLineMode);
+		TerminalState(std::shared_ptr<TerminalData> aTerminalData, NewLineMode aNewLineMode);
 		~TerminalState();
 
 		void Update(EscapeSequenceParser::ParseResult aParseResult);
@@ -156,7 +156,7 @@ namespace imterm {
 
 		Coordinates mSavedCursorPos;
 		TerminalGraphicsState mGraphics;
-		TerminalData& mTerminalData;
+		std::shared_ptr<TerminalData> mTerminalData = nullptr;
 
 		std::queue<std::vector<uint8_t>> mQueuedTerminalOutput;
 

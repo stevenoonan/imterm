@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
+#include <memory>
 
 #include "terminal_types.h"
 #include "vector_timed.h"
@@ -24,7 +25,7 @@ namespace imterm {
 
 
 		TerminalData();
-		TerminalData(TerminalLogger* mLogger);
+		TerminalData(std::shared_ptr<TerminalLogger> mLogger);
 		~TerminalData();
 
 		Line& InsertLine(int aIndex);
@@ -79,13 +80,12 @@ namespace imterm {
 		bool mTextChanged;
 		int mTabSize;
 
-		TerminalLogger* mLogger = nullptr;
-		//std::unique_ptr<TerminalLogger> mLogger = nullptr;
+		std::shared_ptr<TerminalLogger> mLogger = nullptr;
 
 		Line* mUnloggedLine = &mLines[0];
 		int mUnloggedLineNumber = 1;
 
-		void LogUnloggedLine();
+		void LogUnloggedLine(bool aLoggerIsClosing=false);
 
 	};
 

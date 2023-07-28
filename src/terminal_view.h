@@ -90,7 +90,7 @@ namespace imterm {
 			ImVec2 mTextScreenPos;
 		};
 
-		TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState, Options aOptions);
+		TerminalView(std::shared_ptr<TerminalData> aTerminalData, std::shared_ptr<TerminalState> aTerminalState, Options aOptions);
 		~TerminalView();
 
 		const Palette& GetPalette() const { return mPaletteBase; }
@@ -108,7 +108,7 @@ namespace imterm {
 
 		int GetTotalLines() const { return (int)mLines.size(); }
 
-		bool IsTextChanged() const { return mData.IsTextChanged(); }
+		bool IsTextChanged() const { return mData->IsTextChanged(); }
 		bool IsCursorPositionChanged() const { return mCursorPositionChanged; }
 
 		bool IsColorizerEnabled() const { return mColorizerEnabled; }
@@ -213,7 +213,7 @@ namespace imterm {
 
 		float mLineSpacing;
 		const Lines& mLines;
-		TerminalData& mData;
+		std::shared_ptr<TerminalData> mData = nullptr;
 
 		UiState mUiState;
 
@@ -248,7 +248,8 @@ namespace imterm {
 		std::queue<ImVector<ImWchar>> mQueuedInputQueueCharacters;
 		std::queue<ImWchar> mKeyboardInputQueue;
 
-		TerminalState& mTermState;
+		//TerminalState& mTermState;
+		std::shared_ptr<TerminalState> mTermState = nullptr;
 
 		Options mOptions;
 

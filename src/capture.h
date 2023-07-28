@@ -24,7 +24,7 @@ namespace imterm {
 
     void ReconnectionWindow(ImGuiID id);
 
-    void CloseSerialPort();
+    std::optional<std::string> CloseSerialPort();
 
     void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
         bytesize_t bytesize, parity_t parity, stopbits_t stopbits,

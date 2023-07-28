@@ -6,22 +6,27 @@ namespace imterm {
 
 	}
 
-	TerminalData::TerminalData(TerminalLogger* aLogger) : mReadOnly(false), mTextChanged(false), mTabSize(4), mLogger(aLogger) {
+	TerminalData::TerminalData(std::shared_ptr<TerminalLogger> aLogger) : mReadOnly(false), mTextChanged(false), mTabSize(4), mLogger(aLogger) {
 
-		mLogger->RegisterLogClosingWatcher([this] {
-			LogUnloggedLine();
-			});
+		if (mLogger) {
+			mLogger->RegisterLogClosingWatcher([this] {
+				LogUnloggedLine(true);
+				});
+		}
 
 	}
 
 	TerminalData::~TerminalData() {
-		bool removed = mLogger->DeregisterLogClosingWatcher([this] {
-			LogUnloggedLine();
-			});
 
-		assert(removed);
+		if (mLogger) {
+			bool removed = mLogger->DeregisterLogClosingWatcher([this] {
+				LogUnloggedLine(true);
+				});
 
-		if (!removed) std::cerr << "~TerminalData: DeregisterLogClosingWatcher() failed" << std::endl;
+			assert(removed);
+
+			if (!removed) std::cerr << "~TerminalData: DeregisterLogClosingWatcher() failed" << std::endl;
+		}
 	}
 
 	void TerminalData::SetReadOnly(bool aValue)
@@ -66,8 +71,14 @@ namespace imterm {
 		return result;
 	}
 
-	void TerminalData::LogUnloggedLine() {
+	void TerminalData::LogUnloggedLine(bool aLoggerIsClosing) {
 		if (mUnloggedLine) {
+
+			if (aLoggerIsClosing && (mUnloggedLine->size() == 0) && (mUnloggedLineNumber == 1)) {
+				// The logger is being closed, and the unlogged line is the first line which has no data.
+				// If we log this empty data we will create an empty file for no reason. So just return.
+				return;
+			}
 			
 			// First invalidate mUnloggedLine before calling mLogger->Log() because it can cause this function be
 			// called again

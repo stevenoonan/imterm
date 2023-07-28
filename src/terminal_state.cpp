@@ -83,7 +83,7 @@ namespace imterm {
         return mState;
     }
 
-    TerminalState::TerminalState(TerminalData& aTerminalData, NewLineMode aNewLineMode) : mTerminalData(aTerminalData), mNewLineMode(aNewLineMode)
+    TerminalState::TerminalState(std::shared_ptr<TerminalData> aTerminalData, NewLineMode aNewLineMode) : mTerminalData(aTerminalData), mNewLineMode(aNewLineMode)
     {
     }
 
@@ -278,11 +278,11 @@ namespace imterm {
 
             // Begin and end are in localized Terminal coordinates, not global mLines
             // The last line of the terminal is the max mLine
-            begin = getPositionRelative(mTerminalData.mLines.size(), begin);
-            end = getPositionRelative(mTerminalData.mLines.size(), end);
+            begin = getPositionRelative(mTerminalData->mLines.size(), begin);
+            end = getPositionRelative(mTerminalData->mLines.size(), end);
 
             while (begin < end) {
-                auto& eraseLine = mTerminalData.mLines[begin.mLine];
+                auto& eraseLine = mTerminalData->mLines[begin.mLine];
                 if (begin.mLine < end.mLine) {
                     eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
                     begin.mLine++;
@@ -379,7 +379,7 @@ namespace imterm {
 
         // TODO: Figure out what to do with mReadOnly from TerminalView
         //assert(!mReadOnly);
-        assert(!mTerminalData.IsReadOnly());
+        assert(!mTerminalData->IsReadOnly());
 
         // Get a reference for easy... uhm, reference, to the data.
         int& termRowI = getRowIndex();
@@ -396,7 +396,7 @@ namespace imterm {
         int& termColMaxI = mBounds.mColumn;
 
         size_t mLinesI = 0;
-        Lines& mLines = mTerminalData.mLines;
+        Lines& mLines = mTerminalData->mLines;
 
         const uint8_t* aValue = aVector.data();
         size_t dataLength = aVector.size();
@@ -444,7 +444,7 @@ namespace imterm {
             else if (*aValue == '\r')
             {
                 if (mNewLineMode == NewLineMode::AddLfToCr) {
-                    mTerminalData.InsertLine(++mLinesI);
+                    mTerminalData->InsertLine(++mLinesI);
                 }
                 termColI = 0;
                 ++aValue;
@@ -452,7 +452,7 @@ namespace imterm {
             else if (*aValue == '\n')
             {
 
-                mTerminalData.InsertLine(++mLinesI);
+                mTerminalData->InsertLine(++mLinesI);
                 if (mNewLineMode == NewLineMode::AddCrToLf) {
                     termColI = 0;
                 }
@@ -468,7 +468,7 @@ namespace imterm {
                 auto pi = GetPaletteIndex();
                 if (d > 1) {
                     while (d-- > 0 && *aValue != '\0') {
-                        mTerminalData.InputGlyph(line, termColI, pi, *aValue++);
+                        mTerminalData->InputGlyph(line, termColI, pi, *aValue++);
                     }
                 }
                 else {
@@ -476,7 +476,7 @@ namespace imterm {
                     const auto escSeq = mAnsiEscSeqParser.Parse(*aValue);
 
                     if (escSeq.mOutputChar) {
-                        mTerminalData.InputGlyph(line, termColI, pi, escSeq.mOutputChar);
+                        mTerminalData->InputGlyph(line, termColI, pi, escSeq.mOutputChar);
                     }
 
                     // Update the terminal state, which includes coloring,
@@ -489,7 +489,7 @@ namespace imterm {
 
             }
 
-            mTerminalData.SetTextChanged(true);
+            mTerminalData->SetTextChanged(true);
         }
 
         return totalLines;

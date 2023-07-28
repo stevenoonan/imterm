@@ -9,6 +9,8 @@ namespace imterm {
 
 	TerminalLogger::TerminalLogger(Options aOptions) : TerminalLogger(true, "", ".log", GetDefaultLogPath(), aOptions) { }
 
+	TerminalLogger::TerminalLogger(std::string aFileNamePostfix, Options aOptions) : TerminalLogger(true, aFileNamePostfix, ".log", GetDefaultLogPath(), aOptions) { }
+
 	TerminalLogger::TerminalLogger(
 		bool aUsePrefixTimestamp,
 		std::string aFileNamePostfix,

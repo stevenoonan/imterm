@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <filesystem>
+#include <memory>
 
 #include "imgui.h"
 #include "capture.h"
@@ -38,11 +39,13 @@ namespace imterm {
     static std::string connection_message = "";
     static bool auto_reconnect = true;
     static bool render_view = false;
+    static bool enable_logging = false;
     
-    static TerminalLogger term_log({.Enabled=false});
-    static TerminalData term_data(&term_log);
-    static TerminalState term_state(term_data, TerminalState::NewLineMode::Strict);
-    static TerminalView term_view(term_data, term_state, TerminalView::Options());
+    static std::shared_ptr<TerminalLogger> term_log(nullptr);
+    static std::shared_ptr<TerminalData> term_data(nullptr);
+    static std::shared_ptr<TerminalState> term_state(nullptr);
+    static std::shared_ptr<TerminalView> term_view(nullptr);
+
     static auto settings = CaptureSettings();
 
     constexpr std::chrono::seconds port_cache_duration = 1s;
@@ -60,39 +63,44 @@ namespace imterm {
 
         Menu();
 
-        if (render_view) term_view.Render("TerminalView");
+        if (term_view && render_view) {
+            term_view->Render("TerminalView");
+        }
+
         ImGui::End();
 
-        if (serial && serial->isOpen()) {
+        if (term_view && term_state) {
+            if (serial && serial->isOpen()) {
 
-            try {
+                try {
 
-                while (term_view.KeyboardInputAvailable()) {
-                    ImWchar keyboard_input_wide = term_view.GetKeyboardInput();
-                    uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
-                    serial->write(&keyboard_input, 1);
+                    while (term_view->KeyboardInputAvailable()) {
+                        ImWchar keyboard_input_wide = term_view->GetKeyboardInput();
+                        uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
+                        serial->write(&keyboard_input, 1);
+                    }
+
+                    size_t available = serial->available();
+
+                    if (available > 0) {
+
+                        std::vector<uint8_t> buffer(available);
+                        serial->read(buffer, available);
+                        term_state->Input(buffer);
+
+                        term_view->SetCursorToEnd();
+                    }
+
+                    while (term_state->TerminalOutputAvailable()) {
+                        auto output = term_state->GetTerminalOutput();
+                        serial->write(output);
+                    }
+
                 }
-
-                size_t available = serial->available();
-
-                if (available > 0) {
-
-                    std::vector<uint8_t> buffer(available);
-                    serial->read(buffer, available);
-                    term_state.Input(buffer);
-
-                    term_view.SetCursorToEnd();
+                catch (const serial::IOException& ex) {
+                    std::cerr << "Error occurred: " << ex.what() << std::endl;
+                    CloseSerialPort();
                 }
-
-                while (term_state.TerminalOutputAvailable()) {
-                    auto output = term_state.GetTerminalOutput();
-                    serial->write(output);
-                }
-
-            }
-            catch (const serial::IOException& ex) {
-                std::cerr << "Error occurred: " << ex.what() << std::endl;
-                CloseSerialPort();
             }
         }
 
@@ -204,7 +212,7 @@ namespace imterm {
                         if (ImGui::MenuItem(info.port.c_str(), NULL, current_port, true)) {
                             if (!current_port) {
                                 try {
-                                    term_log.SetPostfix(info.port.c_str());
+                                    term_log->SetPostfix(info.port.c_str());
                                     serial->setPort(info.port.c_str());
                                 }
                                 catch (const serial::IOException& ex) {
@@ -229,7 +237,7 @@ namespace imterm {
                 if (ImGui::BeginMenu("New Line Mode"))
                 {
 
-                    auto new_line_mode = term_state.GetNewLineMode();
+                    auto new_line_mode = term_state->GetNewLineMode();
                     const char* line_mode_text;
                     if (new_line_mode == TerminalState::NewLineMode::AddCrToLf) {
                         line_mode_text = "+LF   ";
@@ -245,13 +253,13 @@ namespace imterm {
                     //ImGui::MenuItem("New Line Mode", NULL, false, false);
 
                     if (ImGui::MenuItem("Strict", NULL, (new_line_mode == TerminalState::NewLineMode::Strict))) {
-                        term_state.SetNewLineMode(TerminalState::NewLineMode::Strict);
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::Strict);
                     }
                     if (ImGui::MenuItem("Add CR to LF", NULL, (new_line_mode == TerminalState::NewLineMode::AddCrToLf))) {
-                        term_state.SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
                     }
                     if (ImGui::MenuItem("ADD LF to CR", NULL, (new_line_mode == TerminalState::NewLineMode::AddLfToCr))) {
-                        term_state.SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
                     }
 
                     ImGui::EndMenu();
@@ -259,14 +267,14 @@ namespace imterm {
 
                 if (ImGui::BeginMenu("View"))
                 {
-                    auto ops = term_view.GetOptions();
+                    auto ops = term_view->GetOptions();
                     if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
                         ops.LineNumbers = !ops.LineNumbers;
-                        term_view.SetOptions(ops);
+                        term_view->SetOptions(ops);
                     }
                     if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
                         ops.TimeStamps = !ops.TimeStamps;
-                        term_view.SetOptions(ops);
+                        term_view->SetOptions(ops);
                     }
 
                     ImGui::EndMenu();
@@ -274,18 +282,19 @@ namespace imterm {
 
                 if (ImGui::BeginMenu("Log"))
                 {
-                    auto ops = term_log.GetOptions();
+                    auto ops = term_log->GetOptions();
                     if (ImGui::MenuItem("Enabled", NULL, ops.Enabled, true)) {
                         ops.Enabled = !ops.Enabled;
-                        term_log.SetOptions(ops);
+                        enable_logging = ops.Enabled;
+                        term_log->SetOptions(ops);
                     }
                     if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
                         ops.LineNumbers = !ops.LineNumbers;
-                        term_log.SetOptions(ops);
+                        term_log->SetOptions(ops);
                     }
                     if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
                         ops.TimeStamps = !ops.TimeStamps;
-                        term_log.SetOptions(ops);
+                        term_log->SetOptions(ops);
                     }
 
                     ImGui::EndMenu();
@@ -326,13 +335,20 @@ namespace imterm {
         }
     }
 
-    void CloseSerialPort() {
+    std::optional<std::string> CloseSerialPort() {
+
+        std::optional<std::string> returnValue = std::nullopt;
+
         try {
 
             bool was_open = false;
 
             if (serial) {
-                was_open = serial->isOpen();
+                
+                if (serial->isOpen()) {
+                    was_open = true;
+                    returnValue = serial->getPort();
+                }
                 serial->close();
             }
 
@@ -347,13 +363,15 @@ namespace imterm {
         catch (const serial::IOException& ex) {
             std::cerr << "Error occurred: " << ex.what() << std::endl;
         }
+
+        return returnValue;
     }
 
     void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
         bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
         flowcontrol_t flowcontrol) {
         
-        CloseSerialPort();
+        std::optional<std::string> oldPort = CloseSerialPort();
 
         try {
             serial = new Serial(
@@ -365,12 +383,28 @@ namespace imterm {
                 stopbits,
                 flowcontrol
             );
+
+            if (!oldPort || oldPort.value() != port) {
+                term_log.reset();
+                term_data.reset();
+                term_state.reset();
+                term_view.reset();
+            }
+
+            if (!term_log) {
+                auto ops = TerminalLogger::Options();
+                ops.Enabled = enable_logging;
+                term_log = std::make_shared<TerminalLogger>(port, ops);
+            }
+            if (!term_data) term_data = std::make_shared<TerminalData>(term_log);
+            if (!term_state) term_state = std::make_shared<TerminalState> (term_data, TerminalState::NewLineMode::Strict);
+            if (!term_view) term_view = std::make_shared<TerminalView> (term_data, term_state, TerminalView::Options());
+
+
             serial_init = ConnectionStage::connected;
             render_view = true;
-            term_log.SetPostfix(port);
-            auto ops = term_log.GetOptions();
-            ops.Enabled = true;
-            term_log.SetOptions(ops);
+            
+            
         }
         catch (const std::exception& e) {
             std::cerr << "Could not open port. " << e.what() << "\n";
@@ -466,7 +500,7 @@ namespace imterm {
                 + 1;                         // 1 extra needed at some DPIs
         }
 
-        int lines = 10;
+        int lines = 11;
         if (connection_message != "") {
             lines++;
         }
@@ -612,6 +646,17 @@ namespace imterm {
             ImGui::Spacing();
             DisplayCombo(cbo_new_line_mode_data);
 
+            
+            ImGui::TextUnformatted("Enable logging ");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Log files will be saved to\n%s", TerminalLogger::GetDefaultLogPath().string().c_str());
+            }
+            
+            
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(input_x_offset);
+            ImGui::Checkbox("##enable_logging", &enable_logging);
+
             ImGui::NewLine();
 
             if (ImGui::Button("Save", ImVec2(120, 0))) {
@@ -668,7 +713,7 @@ namespace imterm {
 
                         settings.write();
 
-                        term_state.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
+                        term_state->SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
 
                         ImGui::CloseCurrentPopup();
 

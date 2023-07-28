@@ -28,6 +28,7 @@ namespace imterm {
 		TerminalLogger();
 		TerminalLogger(std::string aFileNamePostfix);
 		TerminalLogger(Options aOptions);
+		TerminalLogger(std::string aFileNamePostfix, Options aOptions);
 		TerminalLogger(
 			bool aUsePrefixTimestamp,
 			std::string aFileNamePostfix,
