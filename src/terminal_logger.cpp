@@ -1,3 +1,4 @@
+#include <atomic>
 #include <assert.h>
 #include "terminal_logger.h"
 
