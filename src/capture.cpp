@@ -16,7 +16,7 @@
 #include "capture.h"
 #include "serial/serial.h"
 #include "terminal_view.h"
-
+#include "ImGuiFileDialog.h"
 
 using namespace std::chrono;
 using namespace imterm;
@@ -645,17 +645,51 @@ namespace imterm {
             ImGui::Spacing();
             ImGui::Spacing();
             DisplayCombo(cbo_new_line_mode_data);
-
             
+            static std::string log_file_path = TerminalLogger::GetDefaultLogPath().string();
             ImGui::TextUnformatted("Enable logging ");
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Log files will be saved to\n%s", TerminalLogger::GetDefaultLogPath().string().c_str());
+                ImGui::SetTooltip("Log files will be saved to\n%s", log_file_path.c_str());
             }
-            
             
             ImGui::SameLine();
             ImGui::SetCursorPosX(input_x_offset);
             ImGui::Checkbox("##enable_logging", &enable_logging);
+            
+            ImGui::SameLine();
+            float xPos = ImGui::GetCursorPosX();
+            auto x = input_width - (ImGui::GetCursorPosX() - input_x_offset);
+
+            if (!enable_logging) ImGui::BeginDisabled();
+            // open Dialog Simple
+            if (ImGui::Button("Chose Path", ImVec2(x,0.0f)))
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "ChooseFileDlgKey", "Choose Path", nullptr, log_file_path,
+                    1,
+                    nullptr,
+                    ImGuiFileDialogFlags_Modal
+                );
+
+            if (!enable_logging) ImGui::EndDisabled();
+
+
+
+            //ImGuiFileDialog::Instance()->Path
+
+            // display
+            if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey"))
+            {
+                // action if OK
+                if (ImGuiFileDialog::Instance()->IsOk())
+                {
+                    log_file_path = ImGuiFileDialog::Instance()->GetFilePathName();
+                    std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
+                    // action
+                }
+
+                // close
+                ImGuiFileDialog::Instance()->Close();
+            }
 
             ImGui::NewLine();
 

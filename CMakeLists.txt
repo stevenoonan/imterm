@@ -82,6 +82,10 @@ add_subdirectory(deps/serial)
 #target_link_libraries(imterm serial)
 include_directories(deps/serial/include)
 
+# ImGuiFileDialog
+add_subdirectory(deps/ImGuiFileDialog)
+include_directories(deps/ImGuiFileDialog)
+
 # Main code
 set(SRC_DIR src)
 set(IMTERM_SRCS
@@ -115,6 +119,7 @@ target_link_libraries(
 	glfw
 	Vulkan::Vulkan
 	tomlplusplus::tomlplusplus
+	ImGuiFileDialog
 )
 
 
