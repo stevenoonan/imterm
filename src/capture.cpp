@@ -662,7 +662,7 @@ namespace imterm {
 
             if (!enable_logging) ImGui::BeginDisabled();
             // open Dialog Simple
-            if (ImGui::Button("Chose Path", ImVec2(x,0.0f)))
+            if (ImGui::Button("Choose Path", ImVec2(x,0.0f)))
                 ImGuiFileDialog::Instance()->OpenDialog(
                     "ChooseFileDlgKey", "Choose Path", nullptr, log_file_path,
                     1,
