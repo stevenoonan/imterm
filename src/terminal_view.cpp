@@ -387,6 +387,46 @@ ImU32 TerminalView::GetGlyphColor(const Glyph & aGlyph) const
 
 void TerminalView::HandleKeyboardInputs()
 {
+
+	static std::unordered_map<ImGuiKey, char> imguiKeyToAscii = {
+		{ImGuiKey_A, 'a'},
+		{ImGuiKey_B, 'b'},
+		{ImGuiKey_C, 'c'},
+		{ImGuiKey_D, 'd'},
+		{ImGuiKey_E, 'e'},
+		{ImGuiKey_F, 'f'},
+		{ImGuiKey_G, 'g'},
+		{ImGuiKey_H, 'h'},
+		{ImGuiKey_I, 'i'},
+		{ImGuiKey_J, 'j'},
+		{ImGuiKey_K, 'k'},
+		{ImGuiKey_L, 'l'},
+		{ImGuiKey_M, 'm'},
+		{ImGuiKey_N, 'n'},
+		{ImGuiKey_O, 'o'},
+		{ImGuiKey_P, 'p'},
+		{ImGuiKey_Q, 'q'},
+		{ImGuiKey_R, 'r'},
+		{ImGuiKey_S, 's'},
+		{ImGuiKey_T, 't'},
+		{ImGuiKey_U, 'u'},
+		{ImGuiKey_V, 'v'},
+		{ImGuiKey_W, 'w'},
+		{ImGuiKey_X, 'x'},
+		{ImGuiKey_Y, 'y'},
+		{ImGuiKey_Z, 'z'},
+		{ImGuiKey_0, '0'},
+		{ImGuiKey_1, '1'},
+		{ImGuiKey_2, '2'},
+		{ImGuiKey_3, '3'},
+		{ImGuiKey_4, '4'},
+		{ImGuiKey_5, '5'},
+		{ImGuiKey_6, '6'},
+		{ImGuiKey_7, '7'},
+		{ImGuiKey_8, '8'},
+		{ImGuiKey_9, '9'}
+	};
+
 	ImGuiIO& io = ImGui::GetIO();
 	auto shift = io.KeyShift;
 	auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
@@ -455,21 +495,41 @@ void TerminalView::HandleKeyboardInputs()
 			MoveEnd(shift);
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
 			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C)))
-			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_X)))
-			Cut();
-		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
-			Cut();
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C))) {
+		//	//Copy();
+		//	AddKeyboardInput(0x03);
+		//} 
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_X)))
+		//	Cut();
+		//else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+		//	Cut();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
 			SelectAll();
+
+
+
+		if (ctrl) {
+
+			for (int key = (int)ImGuiKey_A; key < (int)ImGuiKey_Z; key++) {
+				if (ImGui::IsKeyPressed((ImGuiKey)key)) {
+					auto it = imguiKeyToAscii.find(static_cast<ImGuiKey>(key));
+					if (it != imguiKeyToAscii.end()) {
+						char asciiChar = it->second;
+						asciiChar &= 0x1F;
+						AddKeyboardInput(asciiChar);
+
+					}
+				}
+			}
+
+		}
+
 
 
 		if (!io.InputQueueCharacters.empty())
 		{
 			for (auto& elem : io.InputQueueCharacters) {
 				mKeyboardInputQueue.push(std::move(elem));
-				
 			}
 		}
 
@@ -488,6 +548,8 @@ void TerminalView::HandleMouseInputs()
 		if (!shift && !alt)
 		{
 			auto click = ImGui::IsMouseClicked(0);
+			auto rightClick = ImGui::IsMouseClicked(1);
+
 			auto doubleClick = ImGui::IsMouseDoubleClicked(0);
 			auto t = ImGui::GetTime();
 			auto tripleClick = click && !doubleClick && (mLastClick != -1.0f && (t - mLastClick) < io.MouseDoubleClickTime);
@@ -541,6 +603,12 @@ void TerminalView::HandleMouseInputs()
 
 				mLastClick = (float)ImGui::GetTime();
 			}
+
+			else if (rightClick)
+			{
+				Copy();
+			}
+
 			// Mouse left button dragging (=> update selection)
 			else if (ImGui::IsMouseDragging(0) && ImGui::IsMouseDown(0))
 			{
@@ -600,12 +668,11 @@ void TerminalView::Render()
 	int termRowMaxI = std::max((int)ceil(thisRenderGeometry.mContentRegionAvail.y / mCharAdvance.y) - 1, 0);
 	int termColMaxI = std::max((int)ceil((thisRenderGeometry.mContentRegionAvail.x - thisRenderGeometry.mTextScreenPos.x) / mCharAdvance.x) - 1, 0);
 	mTermState->SetBounds(Coordinates(termRowMaxI, termColMaxI));
-	
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	static const int margin_work_buf_length = 48;
 	char margin_work_buf[margin_work_buf_length];
-	int mTextStart = mLeftMargin;
+	mTextStart = mLeftMargin;
 
 	uint8_t globalLineMaxDigits = 0;
 
