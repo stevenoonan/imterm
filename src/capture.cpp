@@ -40,6 +40,7 @@ namespace imterm {
     static bool auto_reconnect = true;
     static bool render_view = false;
     static bool enable_logging = false;
+    static bool auto_scroll = true;
     
     static std::shared_ptr<TerminalLogger> term_log(nullptr);
     static std::shared_ptr<TerminalData> term_data(nullptr);
@@ -88,7 +89,9 @@ namespace imterm {
                         serial->read(buffer, available);
                         term_state->Input(buffer);
 
-                        term_view->SetCursorToEnd();
+                        if (auto_scroll) {
+                            term_view->SetCursorToEnd();
+                        }
                     }
 
                     while (term_state->TerminalOutputAvailable()) {
@@ -230,6 +233,14 @@ namespace imterm {
                 ImGui::EndMenu();
             }
 
+            
+
+            const char * autoScrollOn = "Auto Scroll On";
+            const char * autoScrollOff = "Auto Scroll Off";
+
+            if (ImGui::MenuItem(auto_scroll?autoScrollOn:autoScrollOff)) {
+                auto_scroll = !auto_scroll;
+            }
             
             if (ImGui::BeginMenu("Options")) {
 
