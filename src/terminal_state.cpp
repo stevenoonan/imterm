@@ -460,6 +460,11 @@ namespace imterm {
                 ++totalLines;
                 ++aValue;
             }
+            else if (*aValue == '\b')
+            {
+                if (termColI > 0) termColI--;
+                ++aValue;
+            }
             else
             {
 
