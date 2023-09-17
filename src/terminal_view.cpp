@@ -606,7 +606,13 @@ void TerminalView::HandleMouseInputs()
 
 			else if (rightClick)
 			{
-				Copy();
+				if (mUiState.mSelectionStart == mUiState.mSelectionEnd) {
+					Paste();
+				}
+				else {
+					Copy();
+					mUiState.mSelectionStart = mUiState.mSelectionEnd;
+				}
 			}
 
 			// Mouse left button dragging (=> update selection)
