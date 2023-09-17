@@ -110,161 +110,194 @@ namespace imterm {
 
         std::vector<uint8_t> output;
 
-        switch (aSeq.mIdentifier) {
-        case H_MoveCursor:
-            [[fallthrough]];
-        case f_MoveCursor:
-            if ((aSeq.mIdentifier == H_MoveCursor) && aSeq.mCommandData.size() == 0) {
-                type = MoveCursorToHome;
-                mCursorPos.mColumn = 0;
-                mCursorPos.mLine = 0;
-            }
-            else if (aSeq.mCommandData.size() == 2) {
-                type = MoveCursorAbs;
-                mCursorPos.mColumn = aSeq.mCommandData[0];
-                mCursorPos.mLine = aSeq.mCommandData[1];
-            }
-            break;
-        case A_MoveCursorUp:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorUp;
-                mCursorPos.mLine -= aSeq.mCommandData[0];
-            }
-            break;
-        case B_MoveCursorDown:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorDown;
-                mCursorPos.mLine += aSeq.mCommandData[0];
-            }
-            break;
-        case C_MoveCursorRight:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorRight;
-                mCursorPos.mColumn += aSeq.mCommandData[0];
-            }
-            break;
-        case D_MoveCursorLeft:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorLeft;
-                mCursorPos.mColumn -= aSeq.mCommandData[0];
-            }
-            break;
-        case E_MoveCursorDownBeginning:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorDownBeginning;
-                mCursorPos.mLine += aSeq.mCommandData[0];
-                mCursorPos.mColumn = 0;
-            }
-            break;
-        case F_MoveCursorUpBeginning:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorUpBeginning;
-                mCursorPos.mLine -= aSeq.mCommandData[0];
-                mCursorPos.mColumn = 0;
-            }
-            break;
-        case G_MoveCursorCol:
-            if (aSeq.mCommandData.size() == 1) {
-                type = MoveCursorCol;
-                mCursorPos.mColumn = aSeq.mCommandData[0];
-            }
-            break;
-        case s_SaveCursorPosition:
-            if (aSeq.mCommandData.size() == 0) {
-                type = SaveCursorPosition;
-                mSavedCursorPos = mCursorPos;
-                processed = true;
-            }
-            break;
-        case u_RestoreCursorPosition:
-            if (aSeq.mCommandData.size() == 0) {
-                type = RestoreCursorPosition;
-                mCursorPos = mSavedCursorPos;
-            }
-            break;
-        case J_EraseDisplay:
+        if (aSeq.mMode == EscapeSequenceParser::Mode::None) {
 
-            if (aSeq.mCommandData.size() == 0) {
-                type = EraseDisplayAfterCursor;
-                eraseBegin = mCursorPos;
-                eraseEnd = mBounds;
-            }
-            else if (aSeq.mCommandData.size() == 1) {
-                switch (aSeq.mCommandData[0]) {
-                case 0:
+            switch (aSeq.mIdentifier) {
+            case H_MoveCursor:
+                [[fallthrough]];
+            case f_MoveCursor:
+                if ((aSeq.mIdentifier == H_MoveCursor) && aSeq.mCommandData.size() == 0) {
+                    type = MoveCursorToHome;
+                    mCursorPos.mColumn = 0;
+                    mCursorPos.mLine = 0;
+                }
+                else if (aSeq.mCommandData.size() == 2) {
+                    type = MoveCursorAbs;
+                    mCursorPos.mColumn = aSeq.mCommandData[0];
+                    mCursorPos.mLine = aSeq.mCommandData[1];
+                }
+                break;
+            case A_MoveCursorUp:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorUp;
+                    mCursorPos.mLine -= aSeq.mCommandData[0];
+                }
+                break;
+            case B_MoveCursorDown:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorDown;
+                    mCursorPos.mLine += aSeq.mCommandData[0];
+                }
+                break;
+            case C_MoveCursorRight:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorRight;
+                    mCursorPos.mColumn += aSeq.mCommandData[0];
+                }
+                break;
+            case D_MoveCursorLeft:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorLeft;
+                    mCursorPos.mColumn -= aSeq.mCommandData[0];
+                }
+                break;
+            case E_MoveCursorDownBeginning:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorDownBeginning;
+                    mCursorPos.mLine += aSeq.mCommandData[0];
+                    mCursorPos.mColumn = 0;
+                }
+                break;
+            case F_MoveCursorUpBeginning:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorUpBeginning;
+                    mCursorPos.mLine -= aSeq.mCommandData[0];
+                    mCursorPos.mColumn = 0;
+                }
+                break;
+            case G_MoveCursorCol:
+                if (aSeq.mCommandData.size() == 1) {
+                    type = MoveCursorCol;
+                    mCursorPos.mColumn = aSeq.mCommandData[0];
+                }
+                break;
+            case s_SaveCursorPosition:
+                if (aSeq.mCommandData.size() == 0) {
+                    type = SaveCursorPosition;
+                    mSavedCursorPos = mCursorPos;
+                    processed = true;
+                }
+                break;
+            case u_RestoreCursorPosition:
+                if (aSeq.mCommandData.size() == 0) {
+                    type = RestoreCursorPosition;
+                    mCursorPos = mSavedCursorPos;
+                }
+                break;
+            case J_EraseDisplay:
+
+                if (aSeq.mCommandData.size() == 0) {
                     type = EraseDisplayAfterCursor;
                     eraseBegin = mCursorPos;
                     eraseEnd = mBounds;
-                    break;
-                case 1:
-                    type = EraseDisplayBeforeCursor;
-                    eraseEnd = mCursorPos;
-                    break;
-                case 2:
-                    type = EraseDisplay;
-                    eraseEnd = mBounds;
-                    break;
-                case 3:
-                    type = EraseSavedLines;
-                    // ??
                 }
-            }
-            break;
-        case K_EraseLine:
+                else if (aSeq.mCommandData.size() == 1) {
+                    switch (aSeq.mCommandData[0]) {
+                    case 0:
+                        type = EraseDisplayAfterCursor;
+                        eraseBegin = mCursorPos;
+                        eraseEnd = mBounds;
+                        break;
+                    case 1:
+                        type = EraseDisplayBeforeCursor;
+                        eraseEnd = mCursorPos;
+                        break;
+                    case 2:
+                        type = EraseDisplay;
+                        eraseEnd = mBounds;
+                        break;
+                    case 3:
+                        type = EraseSavedLines;
+                        // ??
+                    }
+                }
+                break;
+            case K_EraseLine:
 
-            if (aSeq.mCommandData.size() == 0) {
-                type = EraseLineAfterCursor;
-                eraseBegin = mCursorPos;
-                eraseEnd.mLine = eraseBegin.mLine;
-                eraseEnd.mColumn = mBounds.mColumn;
-            }
-            else if (aSeq.mCommandData.size() == 1) {
-                switch (aSeq.mCommandData[0]) {
-                case 0:
+                if (aSeq.mCommandData.size() == 0) {
                     type = EraseLineAfterCursor;
                     eraseBegin = mCursorPos;
                     eraseEnd.mLine = eraseBegin.mLine;
                     eraseEnd.mColumn = mBounds.mColumn;
-                    break;
-                case 1:
-                    type = EraseLineBeforeCursor;
-                    eraseBegin.mLine = mCursorPos.mLine;
-                    eraseEnd = mCursorPos;
-                    break;
-                case 2:
-                    type = EraseLine;
-                    eraseBegin.mLine = mCursorPos.mLine;
-                    eraseEnd.mLine = mCursorPos.mLine;
-                    eraseEnd.mColumn = mBounds.mColumn;
                 }
+                else if (aSeq.mCommandData.size() == 1) {
+                    switch (aSeq.mCommandData[0]) {
+                    case 0:
+                        type = EraseLineAfterCursor;
+                        eraseBegin = mCursorPos;
+                        eraseEnd.mLine = eraseBegin.mLine;
+                        eraseEnd.mColumn = mBounds.mColumn;
+                        break;
+                    case 1:
+                        type = EraseLineBeforeCursor;
+                        eraseBegin.mLine = mCursorPos.mLine;
+                        eraseEnd = mCursorPos;
+                        break;
+                    case 2:
+                        type = EraseLine;
+                        eraseBegin.mLine = mCursorPos.mLine;
+                        eraseEnd.mLine = mCursorPos.mLine;
+                        eraseEnd.mColumn = mBounds.mColumn;
+                    }
+                }
+                break;
+
+            case m_SetGraphics:
+                mGraphics.Update(aSeq.mCommandData);
+                type = SetGraphics;
+                processed = true;
+                break;
+
+            case n_RequestReport:
+                if (aSeq.mCommandData.size() == 1) {
+                    if (aSeq.mCommandData[0] == 5) {
+
+                        std::string out("\x1b[0n");
+                        output = std::vector<uint8_t>(out.begin(), out.end());
+                        type = DeviceStatusReport;
+
+                    }
+                    else if (aSeq.mCommandData[0] == 6) {
+
+                        std::string out("\x1b[" + std::to_string(mCursorPos.mLine + 1) + ";" + std::to_string(mCursorPos.mColumn + 1) + "R");
+                        output = std::vector<uint8_t>(out.begin(), out.end());
+                        type = CursorPositionReport;
+                    }
+                }
+                break;
+            default:
+                assert(0);
             }
-            break;
+        }
+        else if (aSeq.mMode == EscapeSequenceParser::Mode::Screen) {
 
-        case m_SetGraphics:
-            mGraphics.Update(aSeq.mCommandData);
-            type = SetGraphics;
-            processed = true;
-            break;
+            assert(aSeq.mCommandData.size() == 1);
 
-        case n_RequestReport:
-            if (aSeq.mCommandData.size() == 1) {
-                if (aSeq.mCommandData[0] == 5) {
-
-                    std::string out("\x1b[0n");
-                    output = std::vector<uint8_t>(out.begin(), out.end());
-                    type = DeviceStatusReport;
-
-                }
-                else if (aSeq.mCommandData[0] == 6) {
-
-                    std::string out("\x1b[" + std::to_string(mCursorPos.mLine + 1) + ";" + std::to_string(mCursorPos.mColumn + 1) + "R");
-                    output = std::vector<uint8_t>(out.begin(), out.end());
-                    type = CursorPositionReport;
-                }
+            switch (aSeq.mIdentifier) {
+            case l_Mode:
+                // different graphics modes not implemented
+                break;
+            case h_Mode:
+                // different graphics modes not implemented
+                break;
+            default:
+                assert(0);
             }
-            break;
-        default:
-            assert(0);
+        }
+        else if (aSeq.mMode == EscapeSequenceParser::Mode::Private) {
+
+            assert(aSeq.mCommandData.size() == 1);
+
+            switch (aSeq.mIdentifier) {
+            case l_Mode:
+                // private modes not implemented
+                break;
+            case h_Mode:
+                // private modes not implemented
+                break;
+            default:
+                assert(0);
+            }
         }
 
         if ((type >= MoveCursorToHome && type <= MoveCursorCol) || (type == RestoreCursorPosition)) {
@@ -281,7 +314,12 @@ namespace imterm {
             begin = getPositionRelative(mTerminalData->mLines.size(), begin);
             end = getPositionRelative(mTerminalData->mLines.size(), end);
 
+            while ((mTerminalData->mLines.size() <= begin.mLine) || (mTerminalData->mLines.size() <= end.mLine)) {
+                mTerminalData->mLines.push_back(Line());
+            }
+
             while (begin < end) {
+
                 auto& eraseLine = mTerminalData->mLines[begin.mLine];
                 if (begin.mLine < end.mLine) {
                     eraseLine.erase(eraseLine.begin() + begin.mColumn, eraseLine.end());
@@ -444,7 +482,12 @@ namespace imterm {
             else if (*aValue == '\r')
             {
                 if (mNewLineMode == NewLineMode::AddLfToCr) {
-                    mTerminalData->InsertLine(++mLinesI);
+                    //mTerminalData->InsertLine(++mLinesI);
+                    if (termRowI == termRowMaxI) {
+                        // At the bottom (end) of the lines, so we need to add
+                        mTerminalData->InsertLine(++mLinesI);
+                    }
+                    ++termRowI;
                 }
                 termColI = 0;
                 ++aValue;
@@ -452,7 +495,10 @@ namespace imterm {
             else if (*aValue == '\n')
             {
 
-                mTerminalData->InsertLine(++mLinesI);
+                if (termRowI == termRowMaxI) {
+                    // At the bottom (end) of the lines, so we need to add
+                    mTerminalData->InsertLine(++mLinesI);
+                }
                 if (mNewLineMode == NewLineMode::AddCrToLf) {
                     termColI = 0;
                 }
