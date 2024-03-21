@@ -352,8 +352,16 @@ namespace imterm {
 
     void TerminalState::SetBounds(Coordinates aBounds)
     {
+        int lineDelta = aBounds.mLine - mBounds.mLine;
         mBounds = aBounds;
-        SanitzeCursorPosition();
+        if (lineDelta > 0) {
+            if ((mCursorPos.mLine + lineDelta) > (mTerminalData->mLines.size()-1)) {
+                mCursorPos.mLine = mTerminalData->mLines.size() - 1;
+            }
+            else {
+                mCursorPos.mLine += lineDelta;
+            }
+        }
     }
 
     void TerminalState::SanitzeCursorPosition()
@@ -487,7 +495,10 @@ namespace imterm {
                         // At the bottom (end) of the lines, so we need to add
                         mTerminalData->InsertLine(++mLinesI);
                     }
-                    ++termRowI;
+                    else {
+                        // Only advance the terminal row if we are not at the bottom
+                        ++termRowI;
+                    }
                 }
                 termColI = 0;
                 ++aValue;
@@ -499,10 +510,13 @@ namespace imterm {
                     // At the bottom (end) of the lines, so we need to add
                     mTerminalData->InsertLine(++mLinesI);
                 }
+                else {
+                    ++termRowI;
+                }
                 if (mNewLineMode == NewLineMode::AddCrToLf) {
                     termColI = 0;
                 }
-                ++termRowI;
+                
                 ++totalLines;
                 ++aValue;
             }

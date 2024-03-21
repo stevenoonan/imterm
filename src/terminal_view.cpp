@@ -441,7 +441,6 @@ void TerminalView::HandleKeyboardInputs()
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
-		static const auto* input_delete = "\x1B[3~";
 		static const auto* input_backspace = "\x7F";
 		static const auto* input_enter = "\n";
 		static const auto* input_tab = "\t";
@@ -449,6 +448,37 @@ void TerminalView::HandleKeyboardInputs()
 		static const auto* input_down_arrow = "\x1B[B";
 		static const auto* input_right_arrow = "\x1B[C";
 		static const auto* input_left_arrow = "\x1B[D";
+
+		static const auto* input_home = "\x1B[1~";
+		static const auto* input_insert = "\x1B[2~";
+		static const auto* input_delete = "\x1B[3~";
+		static const auto* input_end = "\x1B[4~";
+		static const auto* input_pgup = "\x1B[5~";
+		static const auto* input_pgdn = "\x1B[6~";
+		static const auto* input_home2 = "\x1B[7~";
+		static const auto* input_end2 = "\x1B[8~";
+		
+		static const auto* input_f0 = "\x1B[10~";
+		static const auto* input_f1 = "\x1B[11~";
+		static const auto* input_f2 = "\x1B[12~";
+		static const auto* input_f3 = "\x1B[13~";
+		static const auto* input_f4 = "\x1B[14~";
+		static const auto* input_f5 = "\x1B[15~";
+		static const auto* input_f6 = "\x1B[17~";
+		static const auto* input_f7 = "\x1B[18~";
+		static const auto* input_f8 = "\x1B[19~";
+		static const auto* input_f9 = "\x1B[20~";
+		static const auto* input_f10 = "\x1B[21~";
+		static const auto* input_f11 = "\x1B[23~";
+		static const auto* input_f12 = "\x1B[24~";
+		static const auto* input_f13 = "\x1B[25~";
+		static const auto* input_f14 = "\x1B[26~";
+		static const auto* input_f15 = "\x1B[28~";
+		static const auto* input_f16 = "\x1B[29~";
+		static const auto* input_f17 = "\x1B[31~";
+		static const auto* input_f18 = "\x1B[32~";
+		static const auto* input_f19 = "\x1B[33~";
+		static const auto* input_f20 = "\x1B[34~";
 
 
 		/* handle Delete, Backspace, Enter / Return, Tab */
@@ -489,8 +519,14 @@ void TerminalView::HandleKeyboardInputs()
 			MoveTop(shift);
 		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveBottom(shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
-			MoveHome(shift);
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home))) {
+			//MoveHome(shift);
+			AddKeyboardInput(input_home);
+		}
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End))) {
+			//MoveHome(shift);
+			AddKeyboardInput(input_end);
+		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveEnd(shift);
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
@@ -887,7 +923,8 @@ void TerminalView::Render()
 				}
 				else
 				{
-					auto l = TerminalData::UTF8CharLength(glyph.mChar);
+					size_t l = TerminalData::UTF8CharLength(glyph.mChar);
+					l = std::min(l, (line.size() - i));
 					while (l-- > 0)
 						mLineBuffer.push_back(line[i++].mChar);
 				}
