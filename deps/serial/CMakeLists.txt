@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 2.20)
+cmake_minimum_required(VERSION 3.6)
 project(serial)
+
+set(CMAKE_CXX_STANDARD 20) 
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(APPLE)
     find_library(IOKIT_LIBRARY IOKit)

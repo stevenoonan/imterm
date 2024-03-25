@@ -22,7 +22,7 @@
  * liberal way here. Only a subset of all A-Z, a-z characters actually do
  * anything.
  *
- * The length of (3) continues until matching critera for (4) is found.
+ * The length of (3) continues until matching criteria for (4) is found.
  * After (4) is found, the data will be parsed to determine if it truly is
  * a valid sequence. If not, the data
  *
@@ -41,6 +41,7 @@ public:
 		Inactive,
 		GetEsc,
 		GetCsi,
+		GetMode,
 		GetData
 	};
 
@@ -70,8 +71,10 @@ public:
 		f_MoveCursor = 'f',
 		G_MoveCursorCol = 'G',
 		H_MoveCursor = 'H',
+		h_Mode = 'h', // ESC[=...h (Screen) or ESC[?...h (Private)
 		J_EraseDisplay = 'J',
 		K_EraseLine = 'K',
+		l_Mode = 'l', // ESC[=...l (Screen) or ESC[?...l (Private)
 		m_SetGraphics = 'm',
 		n_RequestReport = 'n',
 		s_SaveCursorPosition = 's',
@@ -146,6 +149,12 @@ public:
 		WhiteBg = 47,
 		DefaultBg = 49
 	};
+
+	enum Mode {
+		None,
+		Screen,
+		Private
+	};
 	
 
 	struct ParseResult {
@@ -154,6 +163,7 @@ public:
 		Error mError;
 		EscapeIdentifier mIdentifier;
 		CommandType mCommand;
+		Mode mMode;
 		std::vector<int> mCommandData;
 	};
 
@@ -170,6 +180,7 @@ private:
 
 	Stage mStage;
 	Error mError;
+	Mode mMode;
 
 	EscapeIdentifier mIdentifier;
 	std::vector<uint8_t> mDataElementInProcess;

@@ -17,6 +17,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h" // for imGui::GetCurrentWindow()
 
+namespace imterm {
 
 template<class InputIt1, class InputIt2, class BinaryPredicate>
 bool equals(InputIt1 first1, InputIt1 last1,
@@ -30,7 +31,7 @@ bool equals(InputIt1 first1, InputIt1 last1,
 	return first1 == last1 && first2 == last2;
 }
 
-TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminalState)
+TerminalView::TerminalView(std::shared_ptr<TerminalData> aTerminalData, std::shared_ptr<TerminalState> aTerminalState, Options aOptions)
 	: mLineSpacing(1.0f)
 	, mWithinRender(false)
 	, mScrollToCursor(false)
@@ -49,8 +50,9 @@ TerminalView::TerminalView(TerminalData& aTerminalData, TerminalState& aTerminal
 	, mShowWhitespaces(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
 	, mData(aTerminalData)
-	, mLines(aTerminalData.mLines)
+	, mLines(aTerminalData->mLines)
 	, mTermState(aTerminalState)
+	, mOptions(aOptions)
 {
 	SetPalette(GetDarkPalette());
 }
@@ -86,13 +88,13 @@ Coordinates TerminalView::SanitizeCoordinates(const Coordinates & aValue) const
 		else
 		{
 			line = (int)mLines.size() - 1;
-			column = mData.GetLineMaxColumn(line);
+			column = mData->GetLineMaxColumn(line);
 		}
 		return Coordinates(line, column);
 	}
 	else
 	{
-		column = mLines.empty() ? 0 : std::min(column, mData.GetLineMaxColumn(line));
+		column = mLines.empty() ? 0 : std::min(column, mData->GetLineMaxColumn(line));
 		return Coordinates(line, column);
 	}
 }
@@ -139,7 +141,7 @@ void TerminalView::Advance(Coordinates & aCoordinates) const
 	if (aCoordinates.mLine < (int)mLines.size())
 	{
 		auto& line = mLines[aCoordinates.mLine];
-		auto cindex = mData.GetCharacterIndex(aCoordinates);
+		auto cindex = mData->GetCharacterIndex(aCoordinates);
 
 		if (cindex + 1 < (int)line.size())
 		{
@@ -151,7 +153,7 @@ void TerminalView::Advance(Coordinates & aCoordinates) const
 			++aCoordinates.mLine;
 			cindex = 0;
 		}
-		aCoordinates.mColumn = mData.GetCharacterColumn(aCoordinates.mLine, cindex);
+		aCoordinates.mColumn = mData->GetCharacterColumn(aCoordinates.mLine, cindex);
 	}
 }
 
@@ -180,12 +182,12 @@ Coordinates TerminalView::ScreenPosToCoordinates(const ImVec2& aPosition) const
 			{
 				float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ").x;
 				float oldX = columnX;
-				float newColumnX = (1.0f + std::floor((1.0f + columnX) / (float(mData.GetTabSize()) * spaceSize))) * (float(mData.GetTabSize()) * spaceSize);
+				float newColumnX = (1.0f + std::floor((1.0f + columnX) / (float(mData->GetTabSize()) * spaceSize))) * (float(mData->GetTabSize()) * spaceSize);
 				columnWidth = newColumnX - oldX;
 				if (mTextStart + columnX + columnWidth * 0.5f > local.x)
 					break;
 				columnX = newColumnX;
-				columnCoord = (columnCoord / mData.GetTabSize()) * mData.GetTabSize() + mData.GetTabSize();
+				columnCoord = (columnCoord / mData->GetTabSize()) * mData->GetTabSize() + mData->GetTabSize();
 				columnIndex++;
 			}
 			else
@@ -215,7 +217,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 		return at;
 
 	auto& line = mLines[at.mLine];
-	auto cindex = mData.GetCharacterIndex(at);
+	auto cindex = mData->GetCharacterIndex(at);
 
 	if (cindex >= (int)line.size())
 		return at;
@@ -223,7 +225,7 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 	while (cindex > 0 && isspace(line[cindex].mChar))
 		--cindex;
 
-	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
 	while (cindex > 0)
 	{
 		auto c = line[cindex].mChar;
@@ -234,12 +236,12 @@ Coordinates TerminalView::FindWordStart(const Coordinates & aFrom) const
 				cindex++;
 				break;
 			}
-			if (cstart != (TerminalData::PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
+			if (cstart != (PaletteIndex)line[size_t(cindex - 1)].mColorIndex)
 				break;
 		}
 		--cindex;
 	}
-	return Coordinates(at.mLine, mData.GetCharacterColumn(at.mLine, cindex));
+	return Coordinates(at.mLine, mData->GetCharacterColumn(at.mLine, cindex));
 }
 
 Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
@@ -249,18 +251,18 @@ Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
 		return at;
 
 	auto& line = mLines[at.mLine];
-	auto cindex = mData.GetCharacterIndex(at);
+	auto cindex = mData->GetCharacterIndex(at);
 
 	if (cindex >= (int)line.size())
 		return at;
 
 	bool prevspace = (bool)isspace(line[cindex].mChar);
-	auto cstart = (TerminalData::PaletteIndex)line[cindex].mColorIndex;
+	auto cstart = (PaletteIndex)line[cindex].mColorIndex;
 	while (cindex < (int)line.size())
 	{
 		auto c = line[cindex].mChar;
 		auto d = TerminalData::UTF8CharLength(c);
-		if (cstart != (TerminalData::PaletteIndex)line[cindex].mColorIndex)
+		if (cstart != (PaletteIndex)line[cindex].mColorIndex)
 			break;
 
 		if (prevspace != !!isspace(c))
@@ -272,7 +274,7 @@ Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
 		}
 		cindex += d;
 	}
-	return Coordinates(aFrom.mLine, mData.GetCharacterColumn(aFrom.mLine, cindex));
+	return Coordinates(aFrom.mLine, mData->GetCharacterColumn(aFrom.mLine, cindex));
 }
 
 Coordinates TerminalView::FindNextWord(const Coordinates & aFrom) const
@@ -282,7 +284,7 @@ Coordinates TerminalView::FindNextWord(const Coordinates & aFrom) const
 		return at;
 
 	// skip to the next non-word character
-	auto cindex = mData.GetCharacterIndex(aFrom);
+	auto cindex = mData->GetCharacterIndex(aFrom);
 	bool isword = false;
 	bool skip = false;
 	if (cindex < (int)mLines[at.mLine].size())
@@ -297,7 +299,7 @@ Coordinates TerminalView::FindNextWord(const Coordinates & aFrom) const
 		if (at.mLine >= mLines.size())
 		{
 			auto l = std::max(0, (int) mLines.size() - 1);
-			return Coordinates(l, mData.GetLineMaxColumn(l));
+			return Coordinates(l, mData->GetLineMaxColumn(l));
 		}
 
 		auto& line = mLines[at.mLine];
@@ -306,7 +308,7 @@ Coordinates TerminalView::FindNextWord(const Coordinates & aFrom) const
 			isword = isalnum(line[cindex].mChar);
 
 			if (isword && !skip)
-				return Coordinates(at.mLine, mData.GetCharacterColumn(at.mLine, cindex));
+				return Coordinates(at.mLine, mData->GetCharacterColumn(at.mLine, cindex));
 
 			if (!isword)
 				skip = false;
@@ -333,7 +335,7 @@ bool TerminalView::IsOnWordBoundary(const Coordinates & aAt) const
 		return true;
 
 	auto& line = mLines[aAt.mLine];
-	auto cindex = mData.GetCharacterIndex(aAt);
+	auto cindex = mData->GetCharacterIndex(aAt);
 	if (cindex >= (int)line.size())
 		return true;
 
@@ -356,8 +358,8 @@ std::string TerminalView::GetWordAt(const Coordinates & aCoords) const
 
 	std::string r;
 
-	auto istart = mData.GetCharacterIndex(start);
-	auto iend = mData.GetCharacterIndex(end);
+	auto istart = mData->GetCharacterIndex(start);
+	auto iend = mData->GetCharacterIndex(end);
 
 	for (auto it = istart; it < iend; ++it)
 		r.push_back(mLines[aCoords.mLine][it].mChar);
@@ -365,15 +367,15 @@ std::string TerminalView::GetWordAt(const Coordinates & aCoords) const
 	return r;
 }
 
-ImU32 TerminalView::GetGlyphColor(const TerminalData::Glyph & aGlyph) const
+ImU32 TerminalView::GetGlyphColor(const Glyph & aGlyph) const
 {
 	if (!mColorizerEnabled)
-		return mPalette[(int)TerminalData::PaletteIndex::Default];
+		return mPalette[(int)PaletteIndex::Default];
 
 	auto const color = mPalette[(int)aGlyph.mColorIndex];
 	if (aGlyph.mPreprocessor)
 	{
-		const auto ppcolor = mPalette[(int)TerminalData::PaletteIndex::Preprocessor];
+		const auto ppcolor = mPalette[(int)PaletteIndex::Preprocessor];
 		const int c0 = ((ppcolor & 0xff) + (color & 0xff)) / 2;
 		const int c1 = (((ppcolor >> 8) & 0xff) + ((color >> 8) & 0xff)) / 2;
 		const int c2 = (((ppcolor >> 16) & 0xff) + ((color >> 16) & 0xff)) / 2;
@@ -385,6 +387,46 @@ ImU32 TerminalView::GetGlyphColor(const TerminalData::Glyph & aGlyph) const
 
 void TerminalView::HandleKeyboardInputs()
 {
+
+	static std::unordered_map<ImGuiKey, char> imguiKeyToAscii = {
+		{ImGuiKey_A, 'a'},
+		{ImGuiKey_B, 'b'},
+		{ImGuiKey_C, 'c'},
+		{ImGuiKey_D, 'd'},
+		{ImGuiKey_E, 'e'},
+		{ImGuiKey_F, 'f'},
+		{ImGuiKey_G, 'g'},
+		{ImGuiKey_H, 'h'},
+		{ImGuiKey_I, 'i'},
+		{ImGuiKey_J, 'j'},
+		{ImGuiKey_K, 'k'},
+		{ImGuiKey_L, 'l'},
+		{ImGuiKey_M, 'm'},
+		{ImGuiKey_N, 'n'},
+		{ImGuiKey_O, 'o'},
+		{ImGuiKey_P, 'p'},
+		{ImGuiKey_Q, 'q'},
+		{ImGuiKey_R, 'r'},
+		{ImGuiKey_S, 's'},
+		{ImGuiKey_T, 't'},
+		{ImGuiKey_U, 'u'},
+		{ImGuiKey_V, 'v'},
+		{ImGuiKey_W, 'w'},
+		{ImGuiKey_X, 'x'},
+		{ImGuiKey_Y, 'y'},
+		{ImGuiKey_Z, 'z'},
+		{ImGuiKey_0, '0'},
+		{ImGuiKey_1, '1'},
+		{ImGuiKey_2, '2'},
+		{ImGuiKey_3, '3'},
+		{ImGuiKey_4, '4'},
+		{ImGuiKey_5, '5'},
+		{ImGuiKey_6, '6'},
+		{ImGuiKey_7, '7'},
+		{ImGuiKey_8, '8'},
+		{ImGuiKey_9, '9'}
+	};
+
 	ImGuiIO& io = ImGui::GetIO();
 	auto shift = io.KeyShift;
 	auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
@@ -399,7 +441,6 @@ void TerminalView::HandleKeyboardInputs()
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
-		static const auto* input_delete = "\x1B[3~";
 		static const auto* input_backspace = "\x7F";
 		static const auto* input_enter = "\n";
 		static const auto* input_tab = "\t";
@@ -407,6 +448,37 @@ void TerminalView::HandleKeyboardInputs()
 		static const auto* input_down_arrow = "\x1B[B";
 		static const auto* input_right_arrow = "\x1B[C";
 		static const auto* input_left_arrow = "\x1B[D";
+
+		static const auto* input_home = "\x1B[1~";
+		static const auto* input_insert = "\x1B[2~";
+		static const auto* input_delete = "\x1B[3~";
+		static const auto* input_end = "\x1B[4~";
+		static const auto* input_pgup = "\x1B[5~";
+		static const auto* input_pgdn = "\x1B[6~";
+		static const auto* input_home2 = "\x1B[7~";
+		static const auto* input_end2 = "\x1B[8~";
+		
+		static const auto* input_f0 = "\x1B[10~";
+		static const auto* input_f1 = "\x1B[11~";
+		static const auto* input_f2 = "\x1B[12~";
+		static const auto* input_f3 = "\x1B[13~";
+		static const auto* input_f4 = "\x1B[14~";
+		static const auto* input_f5 = "\x1B[15~";
+		static const auto* input_f6 = "\x1B[17~";
+		static const auto* input_f7 = "\x1B[18~";
+		static const auto* input_f8 = "\x1B[19~";
+		static const auto* input_f9 = "\x1B[20~";
+		static const auto* input_f10 = "\x1B[21~";
+		static const auto* input_f11 = "\x1B[23~";
+		static const auto* input_f12 = "\x1B[24~";
+		static const auto* input_f13 = "\x1B[25~";
+		static const auto* input_f14 = "\x1B[26~";
+		static const auto* input_f15 = "\x1B[28~";
+		static const auto* input_f16 = "\x1B[29~";
+		static const auto* input_f17 = "\x1B[31~";
+		static const auto* input_f18 = "\x1B[32~";
+		static const auto* input_f19 = "\x1B[33~";
+		static const auto* input_f20 = "\x1B[34~";
 
 
 		/* handle Delete, Backspace, Enter / Return, Tab */
@@ -447,27 +519,53 @@ void TerminalView::HandleKeyboardInputs()
 			MoveTop(shift);
 		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveBottom(shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
-			MoveHome(shift);
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home))) {
+			//MoveHome(shift);
+			AddKeyboardInput(input_home);
+		}
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End))) {
+			//MoveHome(shift);
+			AddKeyboardInput(input_end);
+		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
 			MoveEnd(shift);
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
 			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C)))
-			Copy();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_X)))
-			Cut();
-		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
-			Cut();
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C))) {
+		//	//Copy();
+		//	AddKeyboardInput(0x03);
+		//} 
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_X)))
+		//	Cut();
+		//else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+		//	Cut();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
 			SelectAll();
+
+
+
+		if (ctrl) {
+
+			for (int key = (int)ImGuiKey_A; key < (int)ImGuiKey_Z; key++) {
+				if (ImGui::IsKeyPressed((ImGuiKey)key)) {
+					auto it = imguiKeyToAscii.find(static_cast<ImGuiKey>(key));
+					if (it != imguiKeyToAscii.end()) {
+						char asciiChar = it->second;
+						asciiChar &= 0x1F;
+						AddKeyboardInput(asciiChar);
+
+					}
+				}
+			}
+
+		}
+
 
 
 		if (!io.InputQueueCharacters.empty())
 		{
 			for (auto& elem : io.InputQueueCharacters) {
 				mKeyboardInputQueue.push(std::move(elem));
-				
 			}
 		}
 
@@ -486,6 +584,8 @@ void TerminalView::HandleMouseInputs()
 		if (!shift && !alt)
 		{
 			auto click = ImGui::IsMouseClicked(0);
+			auto rightClick = ImGui::IsMouseClicked(1);
+
 			auto doubleClick = ImGui::IsMouseDoubleClicked(0);
 			auto t = ImGui::GetTime();
 			auto tripleClick = click && !doubleClick && (mLastClick != -1.0f && (t - mLastClick) < io.MouseDoubleClickTime);
@@ -539,6 +639,18 @@ void TerminalView::HandleMouseInputs()
 
 				mLastClick = (float)ImGui::GetTime();
 			}
+
+			else if (rightClick)
+			{
+				if (mUiState.mSelectionStart == mUiState.mSelectionEnd) {
+					Paste();
+				}
+				else {
+					Copy();
+					mUiState.mSelectionStart = mUiState.mSelectionEnd;
+				}
+			}
+
 			// Mouse left button dragging (=> update selection)
 			else if (ImGui::IsMouseDragging(0) && ImGui::IsMouseDown(0))
 			{
@@ -557,7 +669,7 @@ void TerminalView::Render()
 	mCharAdvance = ImVec2(fontSize, ImGui::GetTextLineHeightWithSpacing() * mLineSpacing);
 
 	/* Update palette with the current alpha from style */
-	for (int i = 0; i < (int)TerminalData::PaletteIndex::Max; ++i)
+	for (int i = 0; i < (int)PaletteIndex::Max; ++i)
 	{
 		auto color = ImGui::ColorConvertU32ToFloat4(mPaletteBase[i]);
 		color.w *= ImGui::GetStyle().Alpha;
@@ -597,21 +709,41 @@ void TerminalView::Render()
 
 	int termRowMaxI = std::max((int)ceil(thisRenderGeometry.mContentRegionAvail.y / mCharAdvance.y) - 1, 0);
 	int termColMaxI = std::max((int)ceil((thisRenderGeometry.mContentRegionAvail.x - thisRenderGeometry.mTextScreenPos.x) / mCharAdvance.x) - 1, 0);
-	mTermState.SetBounds(Coordinates(termRowMaxI, termColMaxI));
-	
+	mTermState->SetBounds(Coordinates(termRowMaxI, termColMaxI));
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
-	static const int buf_length = 48;
-	char buf[buf_length];
+	static const int margin_work_buf_length = 48;
+	char margin_work_buf[margin_work_buf_length];
+	mTextStart = mLeftMargin;
+
 	uint8_t globalLineMaxDigits = 0;
-	int digitCountTemp = globalLineMax;
-	while (digitCountTemp && globalLineMaxDigits < 13) {
-		digitCountTemp /= 10;
-		globalLineMaxDigits++;
+
+	const char* marginLineNumStringFormat = "%0*d ";
+	const char* marginTimeStampStringFormat = "%02d:%02d:%02d ";
+
+	if (mOptions.LineNumbers) {
+		
+		int digitCountTemp = globalLineMax;
+		while (digitCountTemp && globalLineMaxDigits < 13) {
+			digitCountTemp /= 10;
+			globalLineMaxDigits++;
+		}
+		
+		int snpf_len = snprintf(margin_work_buf, margin_work_buf_length, marginLineNumStringFormat, globalLineMaxDigits, globalLineMax);
+		mTextStart += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
 	}
-	const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
-	int snpf_len = snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
-	mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
+
+	if (mOptions.TimeStamps) {
+		
+		int snpf_len = snprintf(margin_work_buf, margin_work_buf_length, marginTimeStampStringFormat, 12, 12, 59);
+		mTextStart += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
+	}
+
+
+	//const char* marginTimeStampStringFormat = "%02d:%02d:%02d ";
+	//const char* marginStringFormat = "%0*d %02d:%02d:%02d ";
+	//int snpf_len = snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, globalLineMax, 12, 12, 59);
+	//mTextStart = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x + mLeftMargin;
 
 	if (!mLines.empty())
 	{
@@ -624,10 +756,10 @@ void TerminalView::Render()
 			thisRenderGeometry.mTextScreenPos = textScreenPos;
 
 			auto& line = mLines[lineNo];
-			longest = std::max(mTextStart + TextDistanceToLineStart(Coordinates(lineNo, mData.GetLineMaxColumn(lineNo))), longest);
+			longest = std::max(mTextStart + TextDistanceToLineStart(Coordinates(lineNo, mData->GetLineMaxColumn(lineNo))), longest);
 			auto columnNo = 0;
 			Coordinates lineStartCoord(lineNo, 0);
-			Coordinates lineEndCoord(lineNo, mData.GetLineMaxColumn(lineNo));
+			Coordinates lineEndCoord(lineNo, mData->GetLineMaxColumn(lineNo));
 
 			// Draw selection for the current line
 			float sstart = -1.0f;
@@ -646,7 +778,7 @@ void TerminalView::Render()
 			{
 				ImVec2 vstart(lineStartScreenPos.x + mTextStart + sstart, lineStartScreenPos.y);
 				ImVec2 vend(lineStartScreenPos.x + mTextStart + ssend, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(vstart, vend, mPalette[(int)TerminalData::PaletteIndex::Selection]);
+				drawList->AddRectFilled(vstart, vend, mPalette[(int)PaletteIndex::Selection]);
 			}
 
 			// Draw breakpoints
@@ -655,7 +787,7 @@ void TerminalView::Render()
 			if (mBreakpoints.count(lineNo + 1) != 0)
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::Breakpoint]);
+				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::Breakpoint]);
 			}
 
 			// Draw error markers
@@ -663,7 +795,7 @@ void TerminalView::Render()
 			if (errorIt != mErrorMarkers.end())
 			{
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
-				drawList->AddRectFilled(start, end, mPalette[(int)TerminalData::PaletteIndex::ErrorMarker]);
+				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::ErrorMarker]);
 
 				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
 				{
@@ -680,14 +812,30 @@ void TerminalView::Render()
 			}
 
 			// Draw line number (right aligned)
-			std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
-			std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
-			snprintf(buf, buf_length, marginStringFormat, globalLineMaxDigits, lineNo + 1, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
+			char* margin_work_buf_ptr = margin_work_buf;
+			int margin_work_buf_remainder = margin_work_buf_length;
+			if (mOptions.LineNumbers) {
+				int len = snprintf(margin_work_buf_ptr, margin_work_buf_remainder, marginLineNumStringFormat, globalLineMaxDigits, lineNo + 1);
+				if (len > 0) {
+					margin_work_buf_ptr += len;
+					margin_work_buf_remainder -= len;
+				}
+			}
 
-			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, buf, nullptr, nullptr).x;
-			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)TerminalData::PaletteIndex::LineNumber], buf);
+			if (mOptions.TimeStamps) {
+				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
+				std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
+				int len = snprintf(margin_work_buf_ptr, margin_work_buf_remainder, marginTimeStampStringFormat, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
+				if (len > 0) {
+					margin_work_buf_ptr += len;
+					margin_work_buf_remainder -= len;
+				}
+			}
+			
+			auto lineNoWidth = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, margin_work_buf, nullptr, nullptr).x;
+			drawList->AddText(ImVec2(lineStartScreenPos.x + mTextStart - lineNoWidth, lineStartScreenPos.y), mPalette[(int)PaletteIndex::LineNumber], margin_work_buf);
 
-			mUiState.mCursorPosition = mTermState.getPositionRelative(mLines.size());
+			mUiState.mCursorPosition = mTermState->getPositionRelative(mLines.size());
 
 			if (mUiState.mCursorPosition.mLine == lineNo)
 			{
@@ -697,8 +845,8 @@ void TerminalView::Render()
 				if (!HasSelection())
 				{
 					auto end = ImVec2(start.x + contentSize.x + scrollX, start.y + mCharAdvance.y);
-					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? TerminalData::PaletteIndex::CurrentLineFill : TerminalData::PaletteIndex::CurrentLineFillInactive)]);
-					drawList->AddRect(start, end, mPalette[(int)TerminalData::PaletteIndex::CurrentLineEdge], 1.0f);
+					drawList->AddRectFilled(start, end, mPalette[(int)(focused ? PaletteIndex::CurrentLineFill : PaletteIndex::CurrentLineFillInactive)]);
+					drawList->AddRect(start, end, mPalette[(int)PaletteIndex::CurrentLineEdge], 1.0f);
 				}
 
 				// Render the cursor
@@ -709,12 +857,12 @@ void TerminalView::Render()
 					if (elapsed > 400)
 					{
 						float width = 1.0f;
-						auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
+						auto cindex = mData->GetCharacterIndex(mUiState.mCursorPosition);
 						float cx = TextDistanceToLineStart(mUiState.mCursorPosition);
 
 						ImVec2 cstart(textScreenPos.x + cx, lineStartScreenPos.y);
 						ImVec2 cend(textScreenPos.x + cx + width, lineStartScreenPos.y + mCharAdvance.y);
-						drawList->AddRectFilled(cstart, cend, mPalette[(int)TerminalData::TerminalData::PaletteIndex::Cursor]);
+						drawList->AddRectFilled(cstart, cend, mPalette[(int)PaletteIndex::Cursor]);
 						if (elapsed > 800)
 							mStartTime = timeEnd;
 					}
@@ -722,7 +870,7 @@ void TerminalView::Render()
 			}
 
 			// Render colorized text
-			auto prevColor = line.empty() ? mPalette[(int)TerminalData::TerminalData::PaletteIndex::Default] : GetGlyphColor(line[0]);
+			auto prevColor = line.empty() ? mPalette[(int)PaletteIndex::Default] : GetGlyphColor(line[0]);
 			ImVec2 bufferOffset;
 
 			for (int i = 0; i < line.size();)
@@ -743,7 +891,7 @@ void TerminalView::Render()
 				if (glyph.mChar == '\t')
 				{
 					auto oldX = bufferOffset.x;
-					bufferOffset.x = (1.0f + std::floor((1.0f + bufferOffset.x) / (float(mData.GetTabSize()) * spaceSize))) * (float(mData.GetTabSize()) * spaceSize);
+					bufferOffset.x = (1.0f + std::floor((1.0f + bufferOffset.x) / (float(mData->GetTabSize()) * spaceSize))) * (float(mData->GetTabSize()) * spaceSize);
 					++i;
 
 					if (mShowWhitespaces)
@@ -775,7 +923,8 @@ void TerminalView::Render()
 				}
 				else
 				{
-					auto l = TerminalData::UTF8CharLength(glyph.mChar);
+					size_t l = TerminalData::UTF8CharLength(glyph.mChar);
+					l = std::min(l, (line.size() - i));
 					while (l-- > 0)
 						mLineBuffer.push_back(line[i++].mChar);
 				}
@@ -810,10 +959,10 @@ void TerminalView::Render()
 void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 {
 	mWithinRender = true;
-	mData.SetTextChanged(false);
+	mData->SetTextChanged(false);
 	mCursorPositionChanged = false;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)TerminalData::PaletteIndex::Background]));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
 		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
@@ -896,7 +1045,7 @@ void TerminalView::SetSelection(const Coordinates & aStart, const Coordinates & 
 		const auto lineNo = mUiState.mSelectionEnd.mLine;
 		const auto lineSize = (size_t)lineNo < mLines.size() ? mLines[lineNo].size() : 0;
 		mUiState.mSelectionStart = Coordinates(mUiState.mSelectionStart.mLine, 0);
-		mUiState.mSelectionEnd = Coordinates(lineNo, mData.GetLineMaxColumn(lineNo));
+		mUiState.mSelectionEnd = Coordinates(lineNo, mData->GetLineMaxColumn(lineNo));
 		break;
 	}
 	default:
@@ -914,7 +1063,7 @@ void TerminalView::SetSelection(const Coordinates & aStart, const Coordinates & 
 void TerminalView::SetCursorToEnd()
 {
 	auto line = (int)mLines.size() - 1;
-	auto column = mData.GetLineMaxColumn(line);
+	auto column = mData->GetLineMaxColumn(line);
 	Coordinates pos(line, column);
 	if (mUiState.mCursorPosition != pos)
 	{
@@ -932,7 +1081,7 @@ void TerminalView::DeleteSelection()
 	if (mUiState.mSelectionEnd == mUiState.mSelectionStart)
 		return;
 
-	mData.DeleteRange(mUiState.mSelectionStart, mUiState.mSelectionEnd);
+	mData->DeleteRange(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 
 	SetSelection(mUiState.mSelectionStart, mUiState.mSelectionStart);
 	SetCursorPosition(mUiState.mSelectionStart);
@@ -1005,7 +1154,7 @@ void TerminalView::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 	auto oldPos = mUiState.mCursorPosition;
 	mUiState.mCursorPosition = GetActualCursorCoordinates();
 	auto line = mUiState.mCursorPosition.mLine;
-	auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
+	auto cindex = mData->GetCharacterIndex(mUiState.mCursorPosition);
 
 	while (aAmount-- > 0)
 	{
@@ -1033,15 +1182,15 @@ void TerminalView::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 			}
 		}
 
-		mUiState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
+		mUiState.mCursorPosition = Coordinates(line, mData->GetCharacterColumn(line, cindex));
 		if (aWordMode)
 		{
 			mUiState.mCursorPosition = FindWordStart(mUiState.mCursorPosition);
-			cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
+			cindex = mData->GetCharacterIndex(mUiState.mCursorPosition);
 		}
 	}
 
-	mUiState.mCursorPosition = Coordinates(line, mData.GetCharacterColumn(line, cindex));
+	mUiState.mCursorPosition = Coordinates(line, mData->GetCharacterColumn(line, cindex));
 
 	assert(mUiState.mCursorPosition.mColumn >= 0);
 	if (aSelect)
@@ -1070,7 +1219,7 @@ void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 	if (mLines.empty() || oldPos.mLine >= mLines.size())
 		return;
 
-	auto cindex = mData.GetCharacterIndex(mUiState.mCursorPosition);
+	auto cindex = mData->GetCharacterIndex(mUiState.mCursorPosition);
 	while (aAmount-- > 0)
 	{
 		auto lindex = mUiState.mCursorPosition.mLine;
@@ -1089,7 +1238,7 @@ void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		else
 		{
 			cindex += TerminalData::UTF8CharLength(line[cindex].mChar);
-			mUiState.mCursorPosition = Coordinates(lindex, mData.GetCharacterColumn(lindex, cindex));
+			mUiState.mCursorPosition = Coordinates(lindex, mData->GetCharacterColumn(lindex, cindex));
 			if (aWordMode)
 				mUiState.mCursorPosition = FindNextWord(mUiState.mCursorPosition);
 		}
@@ -1175,7 +1324,7 @@ void TerminalView::MoveHome(bool aSelect)
 void TerminalView::MoveEnd(bool aSelect)
 {
 	auto oldPos = mUiState.mCursorPosition;
-	SetCursorPosition(Coordinates(mUiState.mCursorPosition.mLine, mData.GetLineMaxColumn(oldPos.mLine)));
+	SetCursorPosition(Coordinates(mUiState.mCursorPosition.mLine, mData->GetLineMaxColumn(oldPos.mLine)));
 
 	if (mUiState.mCursorPosition != oldPos)
 	{
@@ -1450,13 +1599,13 @@ bool TerminalView::KeyboardInputAvailable()
 
 std::string TerminalView::GetSelectedText() const
 {
-	return mData.GetText(mUiState.mSelectionStart, mUiState.mSelectionEnd);
+	return mData->GetText(mUiState.mSelectionStart, mUiState.mSelectionEnd);
 }
 
 std::string TerminalView::GetCurrentLineText()const
 {
-	auto lineLength = mData.GetLineMaxColumn(mUiState.mCursorPosition.mLine);
-	return mData.GetText(
+	auto lineLength = mData->GetLineMaxColumn(mUiState.mCursorPosition.mLine);
+	return mData->GetText(
 		Coordinates(mUiState.mCursorPosition.mLine, 0),
 		Coordinates(mUiState.mCursorPosition.mLine, lineLength));
 }
@@ -1466,12 +1615,12 @@ float TerminalView::TextDistanceToLineStart(const Coordinates& aFrom) const
 	auto& line = mLines[aFrom.mLine];
 	float distance = 0.0f;
 	float spaceSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, " ", nullptr, nullptr).x;
-	int colIndex = mData.GetCharacterIndex(aFrom);
+	int colIndex = mData->GetCharacterIndex(aFrom);
 	for (size_t it = 0u; it < line.size() && it < colIndex; )
 	{
 		if (line[it].mChar == '\t')
 		{
-			distance = (1.0f + std::floor((1.0f + distance) / (float(mData.GetTabSize()) * spaceSize))) * (float(mData.GetTabSize()) * spaceSize);
+			distance = (1.0f + std::floor((1.0f + distance) / (float(mData->GetTabSize()) * spaceSize))) * (float(mData->GetTabSize()) * spaceSize);
 			++it;
 		}
 		else
@@ -1527,4 +1676,6 @@ int TerminalView::GetPageSize() const
 {
 	auto height = ImGui::GetWindowHeight() - 20.0f;
 	return (int)floor(height / mCharAdvance.y);
+}
+
 }

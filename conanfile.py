@@ -13,7 +13,7 @@ class ImGuiExample(ConanFile):
     def requirements(self):
         self.requires("tomlplusplus/3.3.0")
         self.requires("glfw/3.3.8")
-        self.requires("imgui/cci.20230105+1.89.2.docking")
+        self.requires("imgui/1.90.4-docking")
         self.requires("vulkan-loader/1.3.239.0")
         self.requires("vulkan-headers/1.3.239.0")
         if self.settings.os == "Linux":

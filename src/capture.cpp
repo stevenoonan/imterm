@@ -10,12 +10,13 @@
 #include <string>
 #include <string_view>
 #include <filesystem>
+#include <memory>
 
 #include "imgui.h"
 #include "capture.h"
 #include "serial/serial.h"
 #include "terminal_view.h"
-
+#include "ImGuiFileDialog.h"
 
 using namespace std::chrono;
 using namespace imterm;
@@ -25,14 +26,30 @@ using namespace std::literals;
 
 namespace imterm {
 
-    static bool serial_init = false;
+    enum class ConnectionStage {
+        not_connected = 0,
+        connected = 1,
+        reconnecting = 2,
+        reconfiguring = 3
+    };
+
+    static ConnectionStage serial_init = ConnectionStage::not_connected;
     static Serial * serial;
     static std::string serial_name = "[Not Connected]";
+    static std::string connection_message = "";
+    static bool auto_reconnect = true;
+    static bool render_view = false;
+    static bool enable_logging = false;
+    static bool auto_scroll = true;
     
-    static TerminalData term_data;
-    static TerminalState term_state(term_data, TerminalState::NewLineMode::Strict);
-    static TerminalView term_view(term_data, term_state);
+    static std::shared_ptr<TerminalLogger> term_log(nullptr);
+    static std::shared_ptr<TerminalData> term_data(nullptr);
+    static std::shared_ptr<TerminalState> term_state(nullptr);
+    static std::shared_ptr<TerminalView> term_view(nullptr);
+
     static auto settings = CaptureSettings();
+
+    constexpr std::chrono::seconds port_cache_duration = 1s;
 
     void CaptureWindowCreate(void) {
 
@@ -43,87 +60,369 @@ namespace imterm {
         }
 
 
-        ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar /* | ImGuiWindowFlags_MenuBar */);
+        ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar);
 
-#ifdef SHOW_MENU
         Menu();
-        //if (serial_init) ImGui::SetNextWindowFocus();
-#endif
-        term_view.Render("TerminalView");
+
+        if (term_view && render_view) {
+            term_view->Render("TerminalView");
+        }
+
         ImGui::End();
 
-        if (serial_init) {
+        if (term_view && term_state) {
+            if (serial && serial->isOpen()) {
 
-            while (term_view.KeyboardInputAvailable()) {
-                ImWchar keyboard_input_wide = term_view.GetKeyboardInput();
-                uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
-                serial->write(&keyboard_input, 1);
-            }
+                try {
 
-            size_t available = serial->available();
+                    while (term_view->KeyboardInputAvailable()) {
+                        ImWchar keyboard_input_wide = term_view->GetKeyboardInput();
+                        uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
+                        serial->write(&keyboard_input, 1);
+                    }
 
-            if (available > 0) {
- 
-                std::vector<uint8_t> buffer(available);
-                serial->read(buffer, available);
-                term_state.Input(buffer);
+                    size_t available = serial->available();
 
-                while (term_state.TerminalOutputAvailable()) {
-                    auto output = term_state.GetTerminalOutput();
-                    serial->write(output);
+                    if (available > 0) {
+
+                        std::vector<uint8_t> buffer(available);
+                        serial->read(buffer, available);
+                        term_state->Input(buffer);
+
+                        if (auto_scroll) {
+                            term_view->SetCursorToEnd();
+                        }
+                    }
+
+                    while (term_state->TerminalOutputAvailable()) {
+                        auto output = term_state->GetTerminalOutput();
+                        serial->write(output);
+                    }
+
                 }
-              
-                term_view.SetCursorToEnd();
+                catch (const serial::IOException& ex) {
+                    std::cerr << "Error occurred: " << ex.what() << std::endl;
+                    CloseSerialPort();
+                }
             }
         }
-        else {
-            ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        
+        if (serial_init == ConnectionStage::reconnecting) {
+            ReconnectionWindow(viewport->ID);
+        }
+        else if ((serial_init == ConnectionStage::not_connected) || (serial_init == ConnectionStage::reconfiguring)) {
             PortSelectionWindow(viewport->ID);
         }
 
     }
 
-#ifdef SHOW_MENU
     void Menu() {
-        // Menu Bar
+
         if (ImGui::BeginMenuBar())
         {
 
-            static int n = 0;
-            ImVec2 textSize = ImGui::CalcTextSize("Add CR to LF");
-            ImGuiStyle& style = ImGui::GetStyle();
-            float comboArrowWidth = style.ItemInnerSpacing.x + ImGui::GetFrameHeight();
-            ImGui::SetNextItemWidth(textSize.x + comboArrowWidth);
-            //ImGui::Combo("Line Mode", &n, "Strict\0Add CR to LF\0Add LF to CR\0\0");
+            std::string menu_port_string;
 
-            ImGui::BeginCombo("MyCombo", "Selected Item");
+            if (serial) {
+                menu_port_string = serial->getPort();
+            }
+            else {
+                menu_port_string = "No Connection";
+            }
 
-            ImGui::SetTooltip("This is a tooltip for the combo box");
-
-            // Add combo box items here
-
-            ImGui::EndCombo();
-
-            if (ImGui::BeginMenu("Line Mode"))
+            if (ImGui::BeginMenu(menu_port_string.c_str()))
             {
-                static int line_mode = 0;
-                if (ImGui::MenuItem("Strict", NULL, (line_mode==0))) {
-                    line_mode = 0;
+                
+                if (ImGui::MenuItem("Auto Reconnect", NULL, auto_reconnect, true)) {
+                    auto_reconnect = !auto_reconnect;
                 }
-                if (ImGui::MenuItem("Add CR to LF", NULL, (line_mode == 1))) {
-                    line_mode = 1;
+
+                ImGui::Separator();
+
+                ImGui::MenuItem("Select Parameters", NULL, false, false);
+
+                std::ostringstream oss;
+
+                if (serial == nullptr) {
+
+                    auto serial_node = settings.get_serial_settings();
+
+                    std::optional<std::string> op_baud_str = serial_node["baud"].value<std::string>();
+                    std::optional<std::string> op_data_bits_str = serial_node["data_bits"].value<std::string>();
+                    std::optional<std::string> op_parity_str = serial_node["parity"].value<std::string>();
+                    std::optional<std::string> op_stop_bits_str = serial_node["stop_bits"].value<std::string>();
+
+                    oss << (op_baud_str.has_value() ? op_baud_str.value() : "???");
+                    oss << std::string(" ");
+                    oss << (op_data_bits_str.has_value() ? op_data_bits_str.value() : "?");
+                    oss << (op_parity_str.has_value() ? op_parity_str.value().substr(1) : "?");
+                    oss << (op_stop_bits_str.has_value() ? op_stop_bits_str.value() : "?");
+
+                } else {
+
+                    uint32_t baud = serial->getBaudrate();
+
+                    // TODO: Flow control and Timeouts
+
+                    oss << serial->getBaudrate() << " " << (int)serial->getBytesize();
+                    switch (serial->getParity()) {
+                    case serial::parity_none:
+                        oss << "N";
+                        break;
+                    case serial::parity_odd:
+                        oss << "O";
+                        break;
+                    case serial::parity_even:
+                        oss << "E";
+                        break;
+                    case serial::parity_mark:
+                        oss << "M";
+                        break;
+                    case serial::parity_space:
+                        oss << "S";
+                        break;
+                    }
+
+                    switch (serial->getStopbits()) {
+                    case serial::stopbits_one:
+                        oss << "1";
+                        break;
+                    case serial::stopbits_one_point_five:
+                        oss << "1.5";
+                        break;
+                    case serial::stopbits_two:
+                        oss << "2";
+                        break;
+                    }
+
                 }
-                if (ImGui::MenuItem("ADD LF to CR", NULL, (line_mode == 2))) {
-                    line_mode = 2;
+
+                if (ImGui::MenuItem(oss.str().c_str(), NULL, false)) {
+                    serial_init = ConnectionStage::reconfiguring;
                 }
-                //if (ImGui::MenuItem("Quit", "Alt+F4")) {
-                //}
+
+                if (serial) {
+                    ImGui::Separator();
+
+                    ImGui::MenuItem("Select New Port", NULL, false, false);
+
+                    auto port_infos_tuple = serial::list_ports_cached(port_cache_duration);
+                    auto port_infos = std::get<1>(port_infos_tuple);
+                    for (serial::PortInfo& info : port_infos) {
+                        bool current_port = (info.port == serial->getPort());
+                        if (ImGui::MenuItem(info.port.c_str(), NULL, current_port, true)) {
+                            if (!current_port) {
+                                try {
+                                    term_log->SetPostfix(info.port.c_str());
+                                    serial->setPort(info.port.c_str());
+                                }
+                                catch (const serial::IOException& ex) {
+                                    std::cerr << "Error occurred: " << ex.what() << std::endl;
+                                    CloseSerialPort();
+                                    serial_init = ConnectionStage::reconfiguring;
+                                    connection_message = "** Unable to open " + info.port + " **";
+                                }
+
+                            }
+                        }
+                    }
+                }
+
                 ImGui::EndMenu();
             }
+
+            
+
+            const char * autoScrollOn = "Auto Scroll On";
+            const char * autoScrollOff = "Auto Scroll Off";
+
+            if (ImGui::MenuItem(auto_scroll?autoScrollOn:autoScrollOff)) {
+                auto_scroll = !auto_scroll;
+            }
+            
+            if (ImGui::BeginMenu("Options")) {
+
+
+                if (ImGui::BeginMenu("New Line Mode"))
+                {
+
+                    auto new_line_mode = term_state->GetNewLineMode();
+                    const char* line_mode_text;
+                    if (new_line_mode == TerminalState::NewLineMode::AddCrToLf) {
+                        line_mode_text = "+LF   ";
+                    }
+                    else if (new_line_mode == TerminalState::NewLineMode::AddLfToCr) {
+                        line_mode_text = "+CR   ";
+                    }
+                    else {
+                        line_mode_text = "Strict";
+                        new_line_mode = TerminalState::NewLineMode::Strict;
+                    }
+
+                    //ImGui::MenuItem("New Line Mode", NULL, false, false);
+
+                    if (ImGui::MenuItem("Strict", NULL, (new_line_mode == TerminalState::NewLineMode::Strict))) {
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::Strict);
+                    }
+                    if (ImGui::MenuItem("Add CR to LF", NULL, (new_line_mode == TerminalState::NewLineMode::AddCrToLf))) {
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
+                    }
+                    if (ImGui::MenuItem("ADD LF to CR", NULL, (new_line_mode == TerminalState::NewLineMode::AddLfToCr))) {
+                        term_state->SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("View"))
+                {
+                    auto ops = term_view->GetOptions();
+                    if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
+                        ops.LineNumbers = !ops.LineNumbers;
+                        term_view->SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
+                        ops.TimeStamps = !ops.TimeStamps;
+                        term_view->SetOptions(ops);
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("Log"))
+                {
+                    auto ops = term_log->GetOptions();
+                    if (ImGui::MenuItem("Enabled", NULL, ops.Enabled, true)) {
+                        ops.Enabled = !ops.Enabled;
+                        enable_logging = ops.Enabled;
+                        term_log->SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
+                        ops.LineNumbers = !ops.LineNumbers;
+                        term_log->SetOptions(ops);
+                    }
+                    if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
+                        ops.TimeStamps = !ops.TimeStamps;
+                        term_log->SetOptions(ops);
+                    }
+
+                    ImGui::EndMenu();
+                }
+
+                ImGui::EndMenu();
+            }
+            
+            
+
+            if (serial && serial->isOpen()) {
+
+                static bool dtr = false;
+                static bool rts = false;
+
+                try {
+
+                    if (ImGui::MenuItem(dtr ? "DTR=1" : "DTR=0", NULL, false, true)) {
+                        dtr = !dtr;
+                        serial->setDTR(dtr);
+                    }
+                    if (ImGui::MenuItem(rts ? "RTS=1" : "RTS=0", NULL, false, true)) {
+                        rts = !rts;
+                        serial->setRTS(rts);
+                    }
+                    ImGui::MenuItem(serial->getCTS() ? "CTS=1" : "CTS=0", NULL, false, false);
+                    ImGui::MenuItem(serial->getDSR() ? "DSR=1" : "DSR=0", NULL, false, false);
+                    ImGui::MenuItem(serial->getCD() ? "DCD=1" : "DCD=0", NULL, false, false);
+
+                }
+                catch (const serial::IOException& ex) {
+                    std::cerr << "Error occurred: " << ex.what() << std::endl;
+                    CloseSerialPort();
+                }
+            }
+
             ImGui::EndMenuBar();
         }
     }
-#endif
+
+    std::optional<std::string> CloseSerialPort() {
+
+        std::optional<std::string> returnValue = std::nullopt;
+
+        try {
+
+            bool was_open = false;
+
+            if (serial) {
+                
+                if (serial->isOpen()) {
+                    was_open = true;
+                    returnValue = serial->getPort();
+                }
+                serial->close();
+            }
+
+            if (auto_reconnect && was_open) {
+                serial_init = ConnectionStage::reconnecting;
+            }
+            else {
+                serial_init = ConnectionStage::not_connected;
+            }
+
+        }
+        catch (const serial::IOException& ex) {
+            std::cerr << "Error occurred: " << ex.what() << std::endl;
+        }
+
+        return returnValue;
+    }
+
+    void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
+        bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
+        flowcontrol_t flowcontrol) {
+        
+        std::optional<std::string> oldPort = CloseSerialPort();
+
+        try {
+            serial = new Serial(
+                port,
+                baudrate,
+                timeout,
+                bytesize,
+                parity,
+                stopbits,
+                flowcontrol
+            );
+
+            if (!oldPort || oldPort.value() != port) {
+                term_log.reset();
+                term_data.reset();
+                term_state.reset();
+                term_view.reset();
+            }
+
+            if (!term_log) {
+                auto ops = TerminalLogger::Options();
+                ops.Enabled = enable_logging;
+                term_log = std::make_shared<TerminalLogger>(port, ops);
+            }
+            if (!term_data) term_data = std::make_shared<TerminalData>(term_log);
+            if (!term_state) term_state = std::make_shared<TerminalState> (term_data, TerminalState::NewLineMode::Strict);
+            if (!term_view) term_view = std::make_shared<TerminalView> (term_data, term_state, TerminalView::Options());
+
+
+            serial_init = ConnectionStage::connected;
+            render_view = true;
+            
+            
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Could not open port. " << e.what() << "\n";
+            connection_message = "** Unable to open " + port + " **";
+        }
+
+    }
 
     template<typename T>
     void DisplayCombo(ComboData<T>& combo_data) {
@@ -162,9 +461,7 @@ namespace imterm {
         static float line_height = 50;
         static float extra_vertical_spacing = 30;
 
-        static bool show_port_selection = true;
         static std::vector<serial::PortInfo> port_infos;
-        static system_clock::time_point last_port_refresh_time = system_clock::now() - 100s;
 
         static ComboData<PortInfo> cbo_port_selection_data("Serial Port", input_x_offset);
         static ComboData<bytesize_t> cbo_data_bits_data("Data bits", input_x_offset);
@@ -176,8 +473,8 @@ namespace imterm {
         static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, input_width,
             "A carriage return (CR) and line feed (LF) is needed\n"
             "for each new line of data. If the input data only\n"
-            "only contains one or the other, select the mode\n"
-            "that will add the missing element.");
+            "contains one or the other, select the mode that\n"
+            "will add the missing element.");
 
         static std::vector<ComboDataBase*> cbo_datas = {
             &cbo_port_selection_data,
@@ -214,25 +511,37 @@ namespace imterm {
                 + 1;                         // 1 extra needed at some DPIs
         }
 
-        if (!show_port_selection) return;
+        int lines = 11;
+        if (connection_message != "") {
+            lines++;
+        }
 
         ImGui::OpenPopup("Setup");
 
         ImVec2 center = viewport->GetCenter();
-        ImGui::SetNextWindowSize(ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height*10)+extra_vertical_spacing), ImGuiCond_Always);
+        ImVec2 window_size = ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height * lines) + extra_vertical_spacing);
+        ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
         ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
         if (ImGui::BeginPopupModal("Setup", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 
-            if (system_clock::now() - last_port_refresh_time > 3s) {
-                port_infos = serial::list_ports();
-                last_port_refresh_time = system_clock::now();
-                std::vector<imterm::ComboDataItem<serial::PortInfo>> items;
+            if (connection_message != "") {
+                ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(connection_message.c_str()).x) * 0.5f);
+                ImGui::TextUnformatted(connection_message.c_str());
+            }
+
+            static std::vector<imterm::ComboDataItem<serial::PortInfo>> port_items;
+
+            auto port_infos_tuple = serial::list_ports_cached(port_cache_duration);
+            if (std::get<0>(port_infos_tuple)) {
+                // There is new data
+                port_items.clear();
+                port_infos = std::get<1>(port_infos_tuple);
                 for (serial::PortInfo& info : port_infos) {
                     imterm::ComboDataItem<serial::PortInfo> item(info.hardware_id, info.port, false, info);
-                    items.push_back(item);
+                    port_items.push_back(item);
                 }
-                cbo_port_selection_data.set_items(items);
+                cbo_port_selection_data.set_items(port_items);
             }
 
             static bool init_options = true;
@@ -324,7 +633,7 @@ namespace imterm {
                 
             }
 
-            if (port_infos.size() == 0) {
+            if (cbo_port_selection_data.get_items().size() == 0) {
                 ImGui::Text("There are no COM ports!");
             }
             else {
@@ -347,6 +656,51 @@ namespace imterm {
             ImGui::Spacing();
             ImGui::Spacing();
             DisplayCombo(cbo_new_line_mode_data);
+            
+            static std::string log_file_path = TerminalLogger::GetDefaultLogPath().string();
+            ImGui::TextUnformatted("Enable logging ");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Log files will be saved to\n%s", log_file_path.c_str());
+            }
+            
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(input_x_offset);
+            ImGui::Checkbox("##enable_logging", &enable_logging);
+            
+            ImGui::SameLine();
+            float xPos = ImGui::GetCursorPosX();
+            auto x = input_width - (ImGui::GetCursorPosX() - input_x_offset);
+
+            if (!enable_logging) ImGui::BeginDisabled();
+            // open Dialog Simple
+            if (ImGui::Button("Choose Path", ImVec2(x,0.0f)))
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "ChooseFileDlgKey", "Choose Path", nullptr, log_file_path,
+                    1,
+                    nullptr,
+                    ImGuiFileDialogFlags_Modal
+                );
+
+            if (!enable_logging) ImGui::EndDisabled();
+
+
+
+            //ImGuiFileDialog::Instance()->Path
+
+            // display
+            if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey"))
+            {
+                // action if OK
+                if (ImGuiFileDialog::Instance()->IsOk())
+                {
+                    log_file_path = ImGuiFileDialog::Instance()->GetFilePathName();
+                    std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
+                    // action
+                }
+
+                // close
+                ImGuiFileDialog::Instance()->Close();
+            }
 
             ImGui::NewLine();
 
@@ -364,23 +718,32 @@ namespace imterm {
 
                 if (baud_int != -1) {
 
-                    serial_init = false;
+                    serial_init = ConnectionStage::not_connected;
 
                     if (cbo_port_selection_data.item_is_selected()) {
+
+                        connection_message = "";
+
                         serial_name = cbo_port_selection_data.get_selected_data().port;
 
-                        try {
-                            serial = new Serial(serial_name, baud_int);
-                            serial_init = true;
-                        }
-                        catch (const std::exception& e) {
-                            std::cerr << "Could not open port. " << e.what() << "\n";
-                            baud_int = -1;
-
-                        }
+                        OpenSerialPort(
+                            serial_name, 
+                            baud_int,
+                            serial::Timeout(
+                                50, /* inter_byte_timeout_ */
+                                50, /* read_timeout_constant_ */
+                                10, /* read_timeout_multiplier_ */
+                                50, /* write_timeout_constant_ */
+                                10  /* write_timeout_multiplier_ */
+                            ),
+                            cbo_data_bits_data.get_selected_data(),
+                            cbo_parity_data.get_selected_data(),
+                            cbo_stop_bits_data.get_selected_data(),
+                            serial::flowcontrol_none
+                        );
                     }
 
-                    if (serial_init) {
+                    if (serial_init == ConnectionStage::connected) {
 
                         auto serial_node_tbl = settings.get_serial_settings().as_table();
                         cbo_port_selection_data.put_selected_item(serial_node_tbl);
@@ -395,13 +758,113 @@ namespace imterm {
 
                         settings.write();
 
-                        term_state.SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
+                        term_state->SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
 
-                        show_port_selection = false;
                         ImGui::CloseCurrentPopup();
 
                     }
                 }
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void ReconnectionWindow(ImGuiID id) {
+
+        static float current_dpi_scale = -1.0f; // make invalid // 96 DPI
+        static float input_x_offset = 200;
+        static float input_width = 200;
+        static float line_height = 50;
+        static float extra_vertical_spacing = 30;
+
+        static std::vector<serial::PortInfo> port_infos;
+
+        static ComboData<PortInfo> cbo_port_selection_data("Serial Port", input_x_offset);
+        static ComboData<bytesize_t> cbo_data_bits_data("Data bits", input_x_offset);
+        static ComboData<stopbits_t> cbo_stop_bits_data("Stop bits", input_x_offset);
+        static ComboData<parity_t> cbo_parity_data("Parity", input_x_offset);
+        static ComboData<flowcontrol_t> cbo_flow_control_data("Flow control", input_x_offset);
+        static char baud_text[128] = "115200";
+
+        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, input_width,
+            "A carriage return (CR) and line feed (LF) is needed\n"
+            "for each new line of data. If the input data only\n"
+            "only contains one or the other, select the mode\n"
+            "that will add the missing element.");
+
+        static std::vector<ComboDataBase*> cbo_datas = {
+            &cbo_port_selection_data,
+            &cbo_data_bits_data,
+            &cbo_stop_bits_data,
+            &cbo_parity_data,
+            &cbo_flow_control_data,
+            &cbo_new_line_mode_data
+        };
+
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+        if (current_dpi_scale != viewport->DpiScale) {
+            current_dpi_scale = viewport->DpiScale;
+            ImVec2 text_size = ImGui::CalcTextSize(std::string(20, '0').c_str());
+            input_x_offset = text_size.x;
+            input_width = input_x_offset;
+
+            for (ComboDataBase* comboData : cbo_datas) {
+                comboData->set_input_x_position(input_x_offset);
+                comboData->set_input_width(input_x_offset);
+            }
+
+            ImFont* font = ImGui::GetFont();
+            line_height = ((style.FramePadding.y * 2) + font->FontSize + style.ItemSpacing.y);
+
+            extra_vertical_spacing =
+                style.PopupBorderSize
+                + (style.ItemSpacing.y * 2)  // 2 calls to ImGui::Spacing()
+                + (style.FramePadding.y * 2) // top and bottom
+                + 1;                         // 1 extra needed at some DPIs
+        }
+
+        ImGui::OpenPopup("Reconnecting...");
+
+        ImVec2 center = viewport->GetCenter();
+        ImVec2 window_size = ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height * 3) + extra_vertical_spacing);
+        ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+        if (ImGui::BeginPopupModal("Reconnecting...", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+
+            static system_clock::time_point last_attempt_time = system_clock::now() - 1s;
+
+            // We should not have gotten here if serial is null
+            assert(serial);
+            assert(!serial->isOpen());
+
+            std::string attempt_string = std::string("Attempting to reconnect to " + serial->getPort());
+            ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(attempt_string.c_str()).x) * 0.5f);
+            ImGui::TextUnformatted(attempt_string.c_str());
+
+            if ((system_clock::now() - last_attempt_time) > 1s) {
+
+                last_attempt_time = system_clock::now();
+
+                try {
+                    serial->open();
+                    serial_init = ConnectionStage::connected;
+                }
+                catch (const std::exception& ex) {
+                    std::cerr << "Error occurred: " << ex.what() << std::endl;
+                }
+
+            }
+
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            if (ImGui::Button("Cancel", ImVec2(window_size.x - (style.WindowPadding.x * 2), 0))) {
+                serial_init = ConnectionStage::not_connected;
             }
 
             ImGui::EndPopup();

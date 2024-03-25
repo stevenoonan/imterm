@@ -1,5 +1,18 @@
 # imterm
-Terminal with ANSI escape sequence support.
+Terminal for UART consoles targeted for embedded systems development.
+
+*  ANSI escape sequence support (colors, cursor position, etc.). ESP32 console features supported.
+*  Infinite scroll back.
+*  Toggle flow control lines (DTR, RTS) and view status of CTS, DSR, and DCD. ESP32s can be reset via RTS toggle.
+*  Lines annotated by number and time. MCUs often don't have a clock to output a timestamp.
+*  Logging to file based on start timestamp and port number.
+*  Auto reconnect: if a serial port goes away, attempt to reconnect automatically (wait for re-enumeration of serial port).
+
+Although there are many programs that can do some mixture of the features I'd like, I have 
+never found one I was satisfied with, so I made my own.
+ 
+Future enhancements will contains features that help me develop and debug 
+embedded systems, such as hexadecimal view. A search function is sorely needed.
 
 Serial port is the only interface currently supported. It is a major work in 
 progress, a lot of cleanup and refactoring is currently needed. That being said,
@@ -9,11 +22,6 @@ features (line editing, coloring, history, etc.).
 Written in C++20 with multi-platform, hardware accelerated GUI based on [Dear ImGui](https://github.com/ocornut/imgui).
 I have tested it in Windows and Linux. Mac should not be difficult to get 
 working, but overall this codebase is early beta quality.
-
-Future enhancements will contains features that help me develop and debug 
-embedded systems, such as hexadecimal view, auto reconnect, etc. Although there
-are many programs that can do some mixture of the features I'd like, I have 
-never found one that did everything I wanted. So, I'm making my own.
 
 Uses [conan](https://conan.io/) for all build dependencies, and CMake.
 

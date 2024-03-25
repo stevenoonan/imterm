@@ -18,6 +18,7 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 		// Init / re-init status
 		mStage = Stage::GetEsc;
 		mIdentifier = EscapeIdentifier::Undefined;
+		mMode = Mode::None;
 		mDataStaged.clear();
 		mDataElementInProcess.clear();
 		mError = Error::NotReady;
@@ -37,13 +38,29 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 
 	case Stage::GetCsi:
 		if (input == CSI) {
-			mStage = Stage::GetData;
+			mStage = Stage::GetMode;
 		}
 		else {
 			mStage = Stage::Inactive;
 			mError = Error::BadCsi;
 		}
 		break;
+
+	case Stage::GetMode:
+
+		mStage = Stage::GetData;
+
+		if (input == '=') {
+			mMode = Mode::Screen;
+			break;
+		}
+		else if (input == '?') {
+			mMode = Mode::Private;
+			break;
+		}
+		else {
+			[[fallthrough]];
+		}		
 
 	case Stage::GetData:
 		if (input >= '0' && input <= '9') {
@@ -59,6 +76,7 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 				mError = Error::None;
 				mParseResult.mIdentifier = mIdentifier;
 				mParseResult.mCommandData = mDataStaged;
+				mParseResult.mMode = mMode;
 			}
 			else {
 				mError = Error::BadData;

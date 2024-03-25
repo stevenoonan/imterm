@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.20) 
+cmake_minimum_required(VERSION 3.6) 
 
 if(POLICY CMP0048)
     #policy for VERSION in cmake 3.0
@@ -82,6 +82,10 @@ add_subdirectory(deps/serial)
 #target_link_libraries(imterm serial)
 include_directories(deps/serial/include)
 
+# ImGuiFileDialog
+add_subdirectory(deps/ImGuiFileDialog)
+include_directories(deps/ImGuiFileDialog)
+
 # Main code
 set(SRC_DIR src)
 set(IMTERM_SRCS
@@ -97,6 +101,8 @@ set(IMTERM_SRCS
 	${SRC_DIR}/terminal_state.h
 	${SRC_DIR}/terminal_view.cpp
 	${SRC_DIR}/terminal_view.h
+	${SRC_DIR}/terminal_logger.cpp
+	${SRC_DIR}/terminal_logger.h
 	${SRC_DIR}/vector_timed.h
 )
 
@@ -113,6 +119,7 @@ target_link_libraries(
 	glfw
 	Vulkan::Vulkan
 	tomlplusplus::tomlplusplus
+	ImGuiFileDialog
 )
 
 
@@ -120,9 +127,15 @@ if (IMGUI_SHOW_DEMO_WINDOW)
     target_compile_definitions(imterm PUBLIC IMGUI_SHOW_DEMO_WINDOW)
 endif()
 
-add_custom_target(copy_font 
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-		"${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
-		$<TARGET_FILE_DIR:${PROJECT_NAME}>
-)
-add_dependencies(${PROJECT_NAME} copy_font)
+#add_custom_target(copy_font 
+#	COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+#		"${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
+#		$<TARGET_FILE_DIR:${PROJECT_NAME}>
+#)
+#add_dependencies(${PROJECT_NAME} copy_font)
+
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+                   "${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
+                   $<TARGET_FILE_DIR:${PROJECT_NAME}>)
