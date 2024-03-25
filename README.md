@@ -3,6 +3,7 @@ Terminal for UART consoles targeted for embedded systems development.
 
 *  ANSI escape sequence support (colors, cursor position, etc.). ESP32 console features supported.
 *  Infinite scroll back.
+*  Toggle flow control lines (DTR, RTS) and view status of CTS, DSR, and DCD. ESP32s can be reset via RTS toggle.
 *  Lines annotated by number and time. MCUs often don't have a clock to output a timestamp.
 *  Logging to file based on start timestamp and port number.
 *  Auto reconnect: if a serial port goes away, attempt to reconnect automatically (wait for re-enumeration of serial port).
