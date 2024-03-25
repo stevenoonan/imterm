@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.20) 
+cmake_minimum_required(VERSION 3.6) 
 
 if(POLICY CMP0048)
     #policy for VERSION in cmake 3.0
@@ -127,9 +127,15 @@ if (IMGUI_SHOW_DEMO_WINDOW)
     target_compile_definitions(imterm PUBLIC IMGUI_SHOW_DEMO_WINDOW)
 endif()
 
-add_custom_target(copy_font 
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-		"${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
-		$<TARGET_FILE_DIR:${PROJECT_NAME}>
-)
-add_dependencies(${PROJECT_NAME} copy_font)
+#add_custom_target(copy_font 
+#	COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+#		"${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
+#		$<TARGET_FILE_DIR:${PROJECT_NAME}>
+#)
+#add_dependencies(${PROJECT_NAME} copy_font)
+
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+                   "${CMAKE_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf"
+                   $<TARGET_FILE_DIR:${PROJECT_NAME}>)
