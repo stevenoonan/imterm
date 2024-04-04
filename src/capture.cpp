@@ -336,7 +336,7 @@ namespace imterm {
                     ImGui::MenuItem(serial->getCD() ? "DCD=1" : "DCD=0", NULL, false, false);
 
                 }
-                catch (const serial::IOException& ex) {
+                catch (const std::exception& ex) {
                     std::cerr << "Error occurred: " << ex.what() << std::endl;
                     CloseSerialPort();
                 }
