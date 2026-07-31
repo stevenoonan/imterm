@@ -20,8 +20,11 @@ endif()
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DVK_PROTOTYPES")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_PROTOTYPES")
 
+option(GLFW_USE_SUBMODULE "Use deps/glfw instead of package manager provided glfw" OFF)
+option(IMGUI_USE_SUBMODULE "Use deps/imgui instead of package manager provided imgui" OFF)
+
 # GLFW
-if (GLFW_USE_SUBMODULE)
+if (GLFW_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/glfw/CMakeLists.txt")
 	set(GLFW_DIR deps/glfw) # Set this to point to an up-to-date GLFW repo
 	option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs" OFF)
 	option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
@@ -33,26 +36,36 @@ if (GLFW_USE_SUBMODULE)
 	# Use vulkan headers from glfw:
 	include_directories(${GLFW_DIR}/deps)
 else()
-	find_package(glfw3 CONFIG)
+	if (GLFW_USE_SUBMODULE)
+		message(WARNING "GLFW_USE_SUBMODULE=ON but deps/glfw is empty. Falling back to find_package(glfw3).")
+	endif()
+	find_package(glfw3 CONFIG REQUIRED)
 endif()
 
 # Dear ImGui
-if (IMGUI_USE_SUBMODULE)
+if (IMGUI_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/imgui/imgui.cpp")
 	set(IMGUI_DIR deps/imgui)
 	include_directories(${IMGUI_DIR} ${IMGUI_DIR}/backends ..)
 	option(IMGUI_SHOW_DEMO_WINDOW "Display the Dear ImGui demo window" OFF)
-	target_compile_definitions(imterm PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+	add_library(imgui STATIC
+		${IMGUI_DIR}/imgui.cpp
+		${IMGUI_DIR}/imgui_draw.cpp
+		${IMGUI_DIR}/imgui_demo.cpp
+		${IMGUI_DIR}/imgui_tables.cpp
+		${IMGUI_DIR}/imgui_widgets.cpp
+	)
+	add_library(imgui::imgui ALIAS imgui)
+	target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+	target_compile_definitions(imgui PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
 	set(IMGUI_SRCS
 		${IMGUI_DIR}/backends/imgui_impl_glfw.cpp 
 		${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp 
-		${IMGUI_DIR}/imgui.cpp 
-		${IMGUI_DIR}/imgui_draw.cpp 
-		${IMGUI_DIR}/imgui_demo.cpp 
-		${IMGUI_DIR}/imgui_tables.cpp 
-		${IMGUI_DIR}/imgui_widgets.cpp
 	)
 else()
-	find_package(imgui CONFIG)
+	if (IMGUI_USE_SUBMODULE)
+		message(WARNING "IMGUI_USE_SUBMODULE=ON but deps/imgui is empty. Falling back to find_package(imgui).")
+	endif()
+	find_package(imgui CONFIG REQUIRED)
 	set(IMGUI_DIR deps/conan/imgui/bindings)
 	set(IMGUI_SRCS
 		${IMGUI_DIR}/imgui_impl_glfw.cpp
@@ -68,7 +81,7 @@ add_subdirectory(deps/beep)
 include_directories(deps/beep)
 
 # toml++
-find_package(tomlplusplus)
+find_package(tomlplusplus REQUIRED)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
@@ -117,6 +130,8 @@ target_link_libraries(
 	tomlplusplus::tomlplusplus
 	ImGuiFileDialog
 )
+
+target_compile_definitions(imterm PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
 
 
 if (IMGUI_SHOW_DEMO_WINDOW)

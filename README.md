@@ -40,19 +40,14 @@ Tab completion is shown.
 
 ## Building
 
-If you are new to [conan](https://conan.io/), you will need to get up to speed with it first.
-
 ### Install Conan
 
-Install Conan: https://docs.conan.io/2/installation.html
-```
-$ pip install conan
-```
+See https://docs.conan.io/2/installation.html.
 
 ### Configure Profile(s)
 Generate a profile, where a C++ 20 compiler must be found:
 ```
-conan profile detect --force
+conan profile detect
 ```
 
 Run `conan profile path default` to find the location of the `default` profile.
@@ -60,28 +55,39 @@ You can save additional profiles in the same location.
 
 ### Setup Dependent Packages & Build Presets
 ```
-conan install . --output-folder=out/conan --build=missing
+./scripts/bootstrap.sh
 ```
 
-Add e.g. `--profile=msvc20-debug` if you want to specify a non-default profile.
+The script preserves an existing default Conan profile, installs both Debug and
+Release dependencies, and lets Conan generate the corresponding CMake presets.
+It does not install operating-system packages or invoke `sudo`.
 
-This will install the requirements specified by [conanfile.py](conanfile.py) and 
-generate `CMakeUserPresets.json` which will point to `/out/conan/build/Debug/generators/CMakePresets.json`.
-This is a preset `CMake` configuration specific to your `conan` profile.
+Alternatively, run Conan directly if you need a non-default profile:
+
+```
+conan install . --output-folder=out/conan --build=missing --profile=msvc20-debug
+```
+
+This installs the requirements specified by [conanfile.py](conanfile.py) and
+generates `CMakeUserPresets.json`, referencing the Debug and Release presets
+under `out/conan`. These are CMake configurations specific to your Conan
+profile.
 
 You can run this command whenever you wish, e.g., after cleaning or deleting the
 output / build directory.
 
-### Permissions error
+### Missing system packages
 If you get something like:
 ```
 can't install because tools.system.package_manager:mode is 'check'.
 ```
-You will need to add to `~/.conan2/global.conf` so Conan can install packages 
-on your system.
+Install the reported packages with your operating system's package manager. If
+you explicitly want Conan to install them instead, opt in for that invocation:
+
 ```
-tools.system.package_manager:mode = install
-tools.system.package_manager:sudo = True
+conan install . --output-folder=out/conan --build=missing \
+  -c tools.system.package_manager:mode=install \
+  -c tools.system.package_manager:sudo=True
 ```
 
 ### CMake Configure & Build
@@ -97,7 +103,7 @@ conanfile.py: If your CMake version is not compatible with CMakePresets (<3.23) 
 Meaning if you have `CMake 3.23` or later you can just run:
 ```
 cmake --preset conan-debug
-cmake --build out/conan/build
+cmake --build --preset conan-debug
 ```
 
 Otherwise, e.g.:

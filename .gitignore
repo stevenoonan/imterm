@@ -8,3 +8,4 @@
 /.vscode
 /CMakeUserPresets.json
 /deps/conan
+/.venv

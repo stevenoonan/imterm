@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.6)
 
 project(ImGuiFileDialog)
 
-find_package(imgui CONFIG REQUIRED)
+if (NOT TARGET imgui::imgui)
+    find_package(imgui CONFIG REQUIRED)
+endif()
 
 add_library(ImGuiFileDialog STATIC
     ImGuiFileDialog.cpp
