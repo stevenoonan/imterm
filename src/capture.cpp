@@ -500,8 +500,7 @@ namespace imterm {
                 comboData->set_input_width(input_x_offset);
             }
             
-            ImFont* font = ImGui::GetFont();
-            line_height = ((style.FramePadding.y * 2) + font->FontSize + style.ItemSpacing.y);
+            line_height = ImGui::GetFrameHeightWithSpacing();
             
             extra_vertical_spacing = 
                 style.PopupBorderSize
@@ -817,8 +816,7 @@ namespace imterm {
                 comboData->set_input_width(input_x_offset);
             }
 
-            ImFont* font = ImGui::GetFont();
-            line_height = ((style.FramePadding.y * 2) + font->FontSize + style.ItemSpacing.y);
+            line_height = ImGui::GetFrameHeightWithSpacing();
 
             extra_vertical_spacing =
                 style.PopupBorderSize

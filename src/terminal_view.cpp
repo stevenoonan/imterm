@@ -482,64 +482,64 @@ void TerminalView::HandleKeyboardInputs()
 
 
 		/* handle Delete, Backspace, Enter / Return, Tab */
-		if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete))) {
+		if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
 			AddKeyboardInput(input_delete);
 		}
-		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Backspace))) {
+		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
 			AddKeyboardInput(input_backspace);
 		}
-		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
+		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Insert))
 			Paste();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_V))
 			Paste();
-		else if (!ctrl && !shift && !alt && (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)) || ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_KeypadEnter))))
+		else if (!ctrl && !shift && !alt && (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)))
 			AddKeyboardInput(input_enter);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab)))
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Tab))
 			AddKeyboardInput(input_tab);
 
 
-		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow))) {
+		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
 			AddKeyboardInput(input_up_arrow);
 		}
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow))) {
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
 			AddKeyboardInput(input_down_arrow);
 		} 
-		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow))) {
+		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
 			AddKeyboardInput(input_left_arrow);
 		} 
-		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
+		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
 			AddKeyboardInput(input_right_arrow);
 
 		} 
-		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageUp)))
+		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageUp))
 			MoveUp(GetPageSize() - 4, shift);
-		else if (!alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_PageDown)))
+		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageDown))
 			MoveDown(GetPageSize() - 4, shift);
-		else if (!alt && ctrl && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home)))
+		else if (!alt && ctrl && ImGui::IsKeyPressed(ImGuiKey_Home))
 			MoveTop(shift);
-		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
+		else if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End))
 			MoveBottom(shift);
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Home))) {
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Home)) {
 			//MoveHome(shift);
 			AddKeyboardInput(input_home);
 		}
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End))) {
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End)) {
 			//MoveHome(shift);
 			AddKeyboardInput(input_end);
 		}
-		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_End)))
+		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End))
 			MoveEnd(shift);
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Insert)))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Insert))
 			Copy();
-		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_C))) {
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_C)) {
 		//	//Copy();
 		//	AddKeyboardInput(0x03);
 		//} 
-		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_X)))
+		//else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_X))
 		//	Cut();
-		//else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Delete)))
+		//else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Delete))
 		//	Cut();
-		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)))
+		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_A))
 			SelectAll();
 
 
@@ -970,7 +970,7 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	if (mHandleKeyboardInputs)
 	{
 		HandleKeyboardInputs();
-		ImGui::PushAllowKeyboardFocus(true);
+		ImGui::PushItemFlag(ImGuiItemFlags_NoTabStop, false);
 	}
 
 	if (mHandleMouseInputs)
@@ -979,7 +979,7 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	Render();
 
 	if (mHandleKeyboardInputs)
-		ImGui::PopAllowKeyboardFocus();
+		ImGui::PopItemFlag();
 
 	if (!mIgnoreImGuiChild)
 		ImGui::EndChild();
