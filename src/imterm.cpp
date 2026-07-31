@@ -23,6 +23,8 @@
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>          // printf, fprintf
 #include <stdlib.h>         // abort
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -379,6 +381,34 @@ static std::filesystem::path GetExecutableDirectory()
     return std::filesystem::current_path();
 }
 
+static float GetInterfaceScale(GLFWmonitor* monitor)
+{
+    if (monitor == NULL)
+        return 1.0f;
+
+    const float content_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(monitor);
+    if (content_scale > 1.01f)
+        return content_scale;
+
+    int width_mm = 0;
+    int height_mm = 0;
+    glfwGetMonitorPhysicalSize(monitor, &width_mm, &height_mm);
+    const GLFWvidmode* video_mode = glfwGetVideoMode(monitor);
+    if (video_mode == NULL || width_mm <= 0 || height_mm <= 0)
+        return 1.0f;
+
+    const float dpi_x = video_mode->width * 25.4f / width_mm;
+    const float dpi_y = video_mode->height * 25.4f / height_mm;
+    const float physical_scale = ((dpi_x + dpi_y) * 0.5f) / 96.0f;
+    if (physical_scale < 1.20f)
+        return 1.0f;
+
+    // Quarter steps avoid awkward fractional sizes while preserving common
+    // 125%, 150%, 175%, and 200% display scales.
+    const float rounded_scale = std::round(physical_scale * 4.0f) / 4.0f;
+    return std::clamp(rounded_scale, 1.0f, 3.0f);
+}
+
 #ifdef CONSOLE_MODE
 int main(int, char**)
 #else
@@ -405,21 +435,16 @@ int __stdcall WinMain(
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    // The width and height is overriden once we determine the font size and dpi scaling. See call to glfwSetWindowSize() below.
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "imterm", NULL, NULL);
-
-    // Get the primary monitor
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const float interface_scale = GetInterfaceScale(monitor);
+    fprintf(stderr, "UI scale: %.2f\n", interface_scale);
 
-    // Get the content scale (including DPI) of the monitor
-    float glfw_dpi_x_scale, glfw_dpi_y_scale;
-    glfwGetMonitorContentScale(monitor, &glfw_dpi_x_scale, &glfw_dpi_y_scale);
-
-    // Calculate DPI based on the content scale
-    const int dpi_base = 96;
-    int glfw_dpi = static_cast<int>(glfw_dpi_x_scale * dpi_base);  // Assuming 96 DPI as base
-
-    
+    // The width and height are overridden after the font is loaded. Scaling
+    // the initial size prevents a tiny flash on high-density displays.
+    GLFWwindow* window = glfwCreateWindow(
+        static_cast<int>(1280 * interface_scale),
+        static_cast<int>(720 * interface_scale),
+        "imterm", NULL, NULL);
 
     // Setup Vulkan
     if (!glfwVulkanSupported())
@@ -463,6 +488,7 @@ int __stdcall WinMain(
 
     // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
     ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(interface_scale);
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
     {
         style.WindowRounding = 0.0f;
@@ -492,7 +518,7 @@ int __stdcall WinMain(
     const std::filesystem::path font_path = GetExecutableDirectory() / "JetBrainsMono-Medium.ttf";
     const std::string font_path_string = font_path.string();
     ImFont* font = NULL;
-    float font_size = 16.0f * glfw_dpi_y_scale;
+    float font_size = 16.0f * interface_scale;
     font_size = std::round(font_size);
     if (std::filesystem::exists(font_path)) {
         font = io.Fonts->AddFontFromFileTTF(font_path_string.c_str(), font_size);
@@ -538,16 +564,9 @@ int __stdcall WinMain(
 
 #ifdef IMGUI_HAS_VIEWPORT
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        static float current_dpi_scale = 1.0f; // 96 DPI
-
-        if (current_dpi_scale != viewport->DpiScale) {
-            current_dpi_scale = viewport->DpiScale;
-            style.ScaleAllSizes(current_dpi_scale);
-        }
 
         if (once) {
             once = false;
-            auto dpi_scale = viewport->DpiScale;
             ImVec2 text_size = ImGui::CalcTextSize(std::string(150, '0').c_str());
             glfwSetWindowSize(window, text_size.x, text_size.y * 40);
         }
