@@ -9,6 +9,10 @@ import platform
 class ImGuiExample(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     generators = "CMakeDeps", "CMakeToolchain"
+    default_options = {
+        "glfw/*:with_wayland": True,
+        "glfw/*:with_x11": True,
+    }
 
     def requirements(self):
         self.requires("tomlplusplus/3.4.0")

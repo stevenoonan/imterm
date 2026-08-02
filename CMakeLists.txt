@@ -31,7 +31,7 @@ if (GLFW_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/glfw/CMakeLists.txt"
 	option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
 	option(GLFW_INSTALL "Generate installation target" OFF)
 	option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
-	option(GLFW_BUILD_WAYLAND "Build GLFW with Wayland support" OFF)
+	option(GLFW_BUILD_WAYLAND "Build GLFW with Wayland support" ON)
 	add_subdirectory(${GLFW_DIR} binary_dir EXCLUDE_FROM_ALL)
 	include_directories(${GLFW_DIR}/include)
 	# Use vulkan headers from glfw:

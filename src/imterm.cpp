@@ -386,6 +386,14 @@ static float GetInterfaceScale(GLFWmonitor* monitor)
     if (monitor == NULL)
         return 1.0f;
 
+    // Wayland exposes window sizes in compositor-scaled logical pixels and
+    // provides the corresponding framebuffer scale separately. Applying our
+    // physical-DPI fallback as well would scale the whole interface twice.
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+    if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND)
+        return 1.0f;
+#endif
+
     const float content_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(monitor);
     if (content_scale > 1.01f)
         return content_scale;
