@@ -25,6 +25,8 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_PROTOTYPES")
 option(GLFW_USE_SUBMODULE "Use deps/glfw instead of package manager provided glfw" OFF)
 option(IMGUI_USE_SUBMODULE "Use deps/imgui instead of package manager provided imgui" OFF)
 option(IMTERM_ENABLE_WARNINGS "Enable compiler warnings for first-party library and test targets" ON)
+option(IMTERM_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(IMTERM_BUILD_FUZZER "Build the opt-in parser/state libFuzzer target" OFF)
 
 function(imterm_enable_warnings target)
 	if(NOT IMTERM_ENABLE_WARNINGS)
@@ -35,6 +37,22 @@ function(imterm_enable_warnings target)
 		target_compile_options(${target} PRIVATE /W4)
 	else()
 		target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+	endif()
+endfunction()
+
+function(imterm_enable_sanitizers target)
+	if(NOT IMTERM_ENABLE_SANITIZERS)
+		return()
+	endif()
+
+	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+		target_compile_options(${target} PRIVATE
+			-fsanitize=address,undefined
+			-fno-omit-frame-pointer
+		)
+		target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+	else()
+		message(FATAL_ERROR "IMTERM_ENABLE_SANITIZERS requires Clang or GCC")
 	endif()
 endfunction()
 
@@ -134,6 +152,7 @@ add_library(imterm_core STATIC ${IMTERM_CORE_SRCS})
 target_include_directories(imterm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/${SRC_DIR})
 target_link_libraries(imterm_core PRIVATE beep)
 imterm_enable_warnings(imterm_core)
+imterm_enable_sanitizers(imterm_core)
 
 # Main application
 set(IMTERM_SRCS
@@ -162,6 +181,7 @@ target_link_libraries(
 )
 
 target_compile_definitions(imterm PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+imterm_enable_sanitizers(imterm)
 
 
 if (IMGUI_SHOW_DEMO_WINDOW)
@@ -180,9 +200,40 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(imterm_tests PRIVATE imterm_core GTest::gtest_main)
 	imterm_enable_warnings(imterm_tests)
+	imterm_enable_sanitizers(imterm_tests)
 
 	include(GoogleTest)
 	gtest_discover_tests(imterm_tests DISCOVERY_MODE PRE_TEST)
+endif()
+
+if(IMTERM_BUILD_FUZZER)
+	if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		message(FATAL_ERROR "IMTERM_BUILD_FUZZER requires Clang with libFuzzer support")
+	endif()
+
+	# Build a separately instrumented copy so coverage and UB checks include the
+	# parser/state implementation rather than only the fuzz harness.
+	add_library(imterm_fuzz_core STATIC ${IMTERM_CORE_SRCS})
+	target_include_directories(imterm_fuzz_core PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR}/${SRC_DIR}
+	)
+	target_link_libraries(imterm_fuzz_core PRIVATE beep)
+	target_compile_options(imterm_fuzz_core PRIVATE
+		-fsanitize=fuzzer-no-link,address,undefined
+		-fno-omit-frame-pointer
+	)
+	imterm_enable_warnings(imterm_fuzz_core)
+
+	add_executable(imterm_parser_fuzz tests/parser_fuzz.cpp)
+	target_link_libraries(imterm_parser_fuzz PRIVATE imterm_fuzz_core)
+	target_compile_options(imterm_parser_fuzz PRIVATE
+		-fsanitize=fuzzer,address,undefined
+		-fno-omit-frame-pointer
+	)
+	target_link_options(imterm_parser_fuzz PRIVATE
+		-fsanitize=fuzzer,address,undefined
+	)
+	imterm_enable_warnings(imterm_parser_fuzz)
 endif()
 
 #add_custom_target(copy_font 

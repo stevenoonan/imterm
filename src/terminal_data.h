@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -71,6 +73,12 @@ namespace imterm {
 			else if ((c & 0xE0) == 0xC0)
 				return 2;
 			return 1;
+		}
+
+		static int UTF8CharLength(Char c, size_t available)
+		{
+			return static_cast<int>(std::min(
+				available, static_cast<size_t>(UTF8CharLength(c))));
 		}
 
 

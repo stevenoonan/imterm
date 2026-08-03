@@ -2,32 +2,55 @@
 
 #include "escape_sequence_parser.h"
 
-EscapeSequenceParser::EscapeSequenceParser() : mStage(Stage::Inactive), mError(Error::NotReady), mIdentifier(EscapeIdentifier::Undefined)
+EscapeSequenceParser::EscapeSequenceParser()
+    : mStage(Stage::Inactive),
+      mError(Error::NotReady),
+      mMode(Mode::None),
+      mIdentifier(EscapeIdentifier::Undefined),
+      mParseResult{}
 {
 }
 
-EscapeSequenceParser::~EscapeSequenceParser()
+void EscapeSequenceParser::ResetForNextByte()
 {
+	mIdentifier = EscapeIdentifier::Undefined;
+	mMode = Mode::None;
+	mDataStaged.clear();
+	mDataElementInProcess = 0;
+	mDataElementDigits = 0;
+	mSequenceLength = 0;
+	mError = Error::NotReady;
+	mParseResult = {};
+	mParseResult.mError = Error::NotReady;
+	mParseResult.mIdentifier = EscapeIdentifier::Undefined;
+	mParseResult.mMode = Mode::None;
 }
 
 const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t input)
 {
+	if (mStage == Stage::Inactive) {
+		ResetForNextByte();
+		mStage = Stage::GetEsc;
+	}
+
+	if (mStage != Stage::GetEsc && input == ESC) {
+		ResetForNextByte();
+		mStage = Stage::GetCsi;
+		mSequenceLength = 1;
+		mParseResult.mStage = mStage;
+		return mParseResult;
+	}
+
+	if (mStage != Stage::GetEsc && ++mSequenceLength > MaxSequenceLength) {
+		Fail(Error::SequenceTooLong);
+		return mParseResult;
+	}
 
 	switch (mStage) {
-	case Stage::Inactive:
-		// Init / re-init status
-		mStage = Stage::GetEsc;
-		mIdentifier = EscapeIdentifier::Undefined;
-		mMode = Mode::None;
-		mDataStaged.clear();
-		mDataElementInProcess.clear();
-		mError = Error::NotReady;
-		mParseResult.mOutputChar = 0;
-		[[fallthrough]];
-
 	case Stage::GetEsc:
 		if (input == ESC) {
 			mStage = Stage::GetCsi;
+			mSequenceLength = 1;
 		}
 		else {
 			mStage = Stage::Inactive;
@@ -41,8 +64,7 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 			mStage = Stage::GetMode;
 		}
 		else {
-			mStage = Stage::Inactive;
-			mError = Error::BadCsi;
+			Fail(Error::BadCsi);
 		}
 		break;
 
@@ -64,14 +86,28 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 
 	case Stage::GetData:
 		if (input >= '0' && input <= '9') {
-			mDataElementInProcess.push_back(input);
+			if (mDataElementDigits >= MaxArgumentDigits) {
+				Fail(Error::ArgumentTooLong);
+				break;
+			}
+
+			const int digit = input - '0';
+			if (mDataElementInProcess > (MaxNumericValue - digit) / 10) {
+				Fail(Error::NumericOverflow);
+				break;
+			}
+
+			mDataElementInProcess = (mDataElementInProcess * 10) + digit;
+			++mDataElementDigits;
 		}
 		else if (input == ';') {
-			ConvertDataElementInProcessToStagedInt();
+			StageDataElement();
 		}
 		else {
 			if ((input >= 'A' && input <= 'Z') || (input >= 'a' && input <= 'z')) {
-				ConvertDataElementInProcessToStagedInt();
+				if (!StageDataElement()) {
+					break;
+				}
 				mIdentifier = static_cast<EscapeIdentifier>(input);
 				mError = Error::None;
 				mParseResult.mIdentifier = mIdentifier;
@@ -79,10 +115,14 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 				mParseResult.mMode = mMode;
 			}
 			else {
-				mError = Error::BadData;
+				Fail(Error::BadData);
+				break;
 			}
 			mStage = Stage::Inactive;
 		}
+		break;
+
+	case Stage::Inactive:
 		break;
 	}
 
@@ -92,12 +132,32 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 	return mParseResult;
 }
 
-void EscapeSequenceParser::ConvertDataElementInProcessToStagedInt()
+bool EscapeSequenceParser::StageDataElement()
 {
-	if (mDataElementInProcess.size() > 0) {
-		std::string cstring(mDataElementInProcess.begin(), mDataElementInProcess.end());
-		int iVal = std::stoi(cstring);
-		mDataStaged.push_back(iVal);
-		mDataElementInProcess.clear();
+	if (mDataElementDigits == 0) {
+		return true;
 	}
+
+	if (mDataStaged.size() >= MaxArguments) {
+		Fail(Error::TooManyArguments);
+		return false;
+	}
+
+	mDataStaged.push_back(mDataElementInProcess);
+	mDataElementInProcess = 0;
+	mDataElementDigits = 0;
+	return true;
+}
+
+void EscapeSequenceParser::Fail(Error error)
+{
+	mStage = Stage::Inactive;
+	mError = error;
+	mParseResult.mOutputChar = 0;
+	mParseResult.mIdentifier = EscapeIdentifier::Undefined;
+	mParseResult.mCommand = CommandType::None;
+	mParseResult.mMode = Mode::None;
+	mParseResult.mCommandData.clear();
+	mParseResult.mStage = mStage;
+	mParseResult.mError = mError;
 }

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -112,6 +114,120 @@ TEST_F(TerminalStateTest, PreservesScrollbackWhenTheViewportFills)
     EXPECT_EQ(imterm::test::LineText(data->mLines[1]), "1");
     EXPECT_EQ(imterm::test::LineText(data->mLines[2]), "2");
     EXPECT_EQ(state->getPositionRelative(data->mLines.size()), Coordinates(2, 1));
+}
+
+TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
+{
+    const std::vector<std::vector<uint8_t>> sequences = {
+        {0xC2, 0xA2},
+        {0xE2, 0x82, 0xAC},
+        {0xF0, 0x9F, 0x98, 0x80},
+        {0xF8, 0x80, 0x80, 0x80, 0x80},
+        {0xFC, 0x80, 0x80, 0x80, 0x80, 0x80},
+    };
+
+    for (const auto& sequence : sequences) {
+        for (size_t split = 1; split < sequence.size(); ++split) {
+            data = std::make_shared<imterm::TerminalData>();
+            state = std::make_unique<imterm::TerminalState>(
+                data, imterm::TerminalState::NewLineMode::Strict);
+            state->SetBounds(Coordinates(2, 79));
+
+            state->Input(std::span(sequence).first(split));
+            EXPECT_TRUE(data->mLines.front().empty()) << "split=" << split;
+
+            state->Input(std::span(sequence).subspan(split));
+            EXPECT_EQ(imterm::test::LineText(data->mLines.front()),
+                std::string(sequence.begin(), sequence.end())) << "split=" << split;
+        }
+    }
+}
+
+TEST_F(TerminalStateTest, IgnoresUnknownSgrAndCsiCommands)
+{
+    EXPECT_NO_THROW(state->Input(imterm::test::Bytes(
+        "\x1B[999mA\x1B[12zB\x1B[31mR")));
+
+    ASSERT_EQ(data->mLines.front().size(), 3U);
+    EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "ABR");
+    EXPECT_EQ(data->mLines.front().back().mColorIndex, imterm::PaletteIndex::Red);
+}
+
+TEST_F(TerminalStateTest, ClampsLargeCursorMovementsInEveryDirection)
+{
+    state->SetBounds(Coordinates(4, 9));
+
+    state->Input(imterm::test::Bytes("\x1B[65535C\x1B[65535B"));
+    EXPECT_EQ(state->getPosition(), Coordinates(4, 9));
+
+    state->Input(imterm::test::Bytes("\x1B[65535D\x1B[65535A"));
+    EXPECT_EQ(state->getPosition(), Coordinates(0, 0));
+
+    state->Input(imterm::test::Bytes("\x1B[65535E"));
+    EXPECT_EQ(state->getPosition(), Coordinates(4, 0));
+    state->Input(imterm::test::Bytes("\x1B[65535F"));
+    EXPECT_EQ(state->getPosition(), Coordinates(0, 0));
+}
+
+TEST_F(TerminalStateTest, MalformedSequenceRecoversAtEveryChunkBoundary)
+{
+    const auto malformed = imterm::test::Bytes("A\x1B[12!B");
+
+    for (size_t split = 0; split <= malformed.size(); ++split) {
+        data = std::make_shared<imterm::TerminalData>();
+        state = std::make_unique<imterm::TerminalState>(
+            data, imterm::TerminalState::NewLineMode::Strict);
+        state->SetBounds(Coordinates(2, 79));
+
+        state->Input(std::span(malformed).first(split));
+        state->Input(std::span(malformed).subspan(split));
+
+        EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "AB")
+            << "split=" << split;
+    }
+}
+
+TEST_F(TerminalStateTest, EmbeddedNulDoesNotTerminateOrHideFollowingBytes)
+{
+    state->Input(imterm::test::Bytes({'A', 0, 'B'}));
+
+    EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "AB");
+}
+
+TEST_F(TerminalStateTest, OversizedCsiArgumentRecoversForFollowingText)
+{
+    state->Input(imterm::test::Bytes("A\x1B[999999999mZ"));
+
+    const std::string text = imterm::test::LineText(data->mLines.front());
+    EXPECT_EQ(text.front(), 'A');
+    EXPECT_EQ(text.back(), 'Z');
+}
+
+TEST_F(TerminalStateTest, ErasingBeyondAShortLineUsesValidatedIterators)
+{
+    state->Input(imterm::test::Bytes("x\x1B[10C\x1B[1KZ"));
+
+    EXPECT_EQ(imterm::test::LineText(data->mLines.front()),
+        "           Z");
+}
+
+TEST_F(TerminalStateTest, DeterministicRandomInputDoesNotCrashOrGrowWithoutBound)
+{
+    state->SetBounds(Coordinates(4, 79));
+    std::mt19937 generator(0x1A2B3C4D);
+    std::uniform_int_distribution<int> distribution(0, 255);
+    std::vector<uint8_t> bytes(100000);
+    size_t newlineCount = 0;
+    for (uint8_t& byte : bytes) {
+        byte = static_cast<uint8_t>(distribution(generator));
+        if (byte == '\a') {
+            byte = 0;
+        }
+        newlineCount += byte == '\n' ? 1U : 0U;
+    }
+
+    EXPECT_NO_THROW(state->Input(bytes));
+    EXPECT_LE(data->mLines.size(), newlineCount + 5);
 }
 
 } // namespace

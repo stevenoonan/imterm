@@ -37,6 +37,7 @@ namespace imterm {
     static Serial * serial;
     static std::string serial_name = "[Not Connected]";
     static std::string connection_message = "";
+    static std::string capture_error_message = "";
     static bool auto_reconnect = true;
     static bool render_view = false;
     static bool enable_logging = false;
@@ -66,6 +67,12 @@ namespace imterm {
 
         if (term_view && render_view) {
             term_view->Render("TerminalView");
+        }
+
+        if (!capture_error_message.empty()) {
+            ImGui::TextColored(
+                ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                "%s", capture_error_message.c_str());
         }
 
         ImGui::End();
@@ -103,6 +110,15 @@ namespace imterm {
                 catch (const serial::IOException& ex) {
                     std::cerr << "Error occurred: " << ex.what() << std::endl;
                     CloseSerialPort();
+                }
+                catch (const std::exception& ex) {
+                    capture_error_message =
+                        std::string("Terminal input error: ") + ex.what();
+                    std::cerr << capture_error_message << std::endl;
+                }
+                catch (...) {
+                    capture_error_message = "Unknown terminal input error";
+                    std::cerr << capture_error_message << std::endl;
                 }
             }
         }

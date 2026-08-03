@@ -74,4 +74,30 @@ TEST(TerminalLoggerTest, CompletingALineLogsThroughTerminalData)
     }
 }
 
+TEST(TerminalLoggerTest, CursorCreatedRowsKeepThePendingLogLineValid)
+{
+    imterm::test::TemporaryDirectory directory;
+    imterm::TerminalLogger::Options options;
+    options.Enabled = true;
+    options.LineNumbers = false;
+    options.TimeStamps = false;
+    auto logger = std::make_shared<imterm::TerminalLogger>(
+        false, "cursor-rows", ".log", directory.Path(), options);
+
+    {
+        auto data = std::make_shared<imterm::TerminalData>(logger);
+        imterm::TerminalState state(
+            data, imterm::TerminalState::NewLineMode::AddCrToLf);
+        state.SetBounds(Coordinates(4, 79));
+
+        EXPECT_NO_THROW(state.Input(
+            imterm::test::Bytes("\x1B[4BX\n")));
+        logger->Close();
+    }
+
+    EXPECT_NE(imterm::test::ReadFile(directory.Path() / "cursor-rows.log")
+                  .find("X\n"),
+        std::string::npos);
+}
+
 } // namespace

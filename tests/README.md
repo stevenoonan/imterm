@@ -51,6 +51,25 @@ ctest --preset conan-release --output-on-failure
 Tests are enabled through CMake's standard `BUILD_TESTING` option. A build that
 does not need tests may configure with `-DBUILD_TESTING=OFF`.
 
+## Sanitizers and fuzzing
+
+AddressSanitizer and UndefinedBehaviorSanitizer can be enabled for the
+first-party targets in a separate GCC or Clang build:
+
+```sh
+cmake --preset conan-debug -DIMTERM_ENABLE_SANITIZERS=ON
+cmake --build --preset conan-debug
+ctest --preset conan-debug --output-on-failure
+```
+
+Clang users can also build the opt-in libFuzzer boundary target:
+
+```sh
+cmake --preset conan-debug -DCMAKE_CXX_COMPILER=clang++ -DIMTERM_BUILD_FUZZER=ON
+cmake --build --preset conan-debug --target imterm_parser_fuzz
+./out/conan/build/Debug/imterm_parser_fuzz -max_total_time=60
+```
+
 ## Test categories
 
 - Parser tests characterize byte-by-byte escape-sequence parsing.

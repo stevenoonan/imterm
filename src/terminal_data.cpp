@@ -303,22 +303,26 @@ namespace imterm {
 
 
 	void TerminalData::InputGlyph(Line& aLine, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue) {
+		if (aColumnIndex < 0) {
+			aColumnIndex = 0;
+		}
+		const size_t column = static_cast<size_t>(aColumnIndex);
 
 		// Add spaces until the data structure size matches the current column index 
-		while (aLine.size() < aColumnIndex) {
+		while (aLine.size() < column) {
 			aLine.push_back(Glyph(' ', PaletteIndex::Default));
 		}
 
-		if (aLine.size() == aColumnIndex) {
+		if (aLine.size() == column) {
 			// Add a character
-			aLine.insert(aLine.begin() + aColumnIndex++, Glyph(aValue, aPaletteIndex));
+			aLine.emplace_back(aValue, aPaletteIndex);
 		}
 		else {
 			// Replace a character
-			aLine[aColumnIndex].mChar = aValue;
-			aLine[aColumnIndex].mColorIndex = aPaletteIndex;
-			aColumnIndex++;
+			aLine[column].mChar = aValue;
+			aLine[column].mColorIndex = aPaletteIndex;
 		}
+		++aColumnIndex;
 	}
 
 	int TerminalData::GetCharacterIndex(const Coordinates& aCoordinates) const
@@ -334,7 +338,7 @@ namespace imterm {
 				c = (c / mTabSize) * mTabSize + mTabSize;
 			else
 				++c;
-			i += TerminalData::UTF8CharLength(line[i].mChar);
+			i += TerminalData::UTF8CharLength(line[i].mChar, line.size() - i);
 		}
 		return i;
 	}
@@ -349,7 +353,7 @@ namespace imterm {
 		while (i < aIndex && i < (int)line.size())
 		{
 			auto c = line[i].mChar;
-			i += TerminalData::UTF8CharLength(c);
+			i += TerminalData::UTF8CharLength(c, line.size() - i);
 			if (c == '\t')
 				col = (col / mTabSize) * mTabSize + mTabSize;
 			else
@@ -364,8 +368,9 @@ namespace imterm {
 			return 0;
 		auto& line = mLines[aLine];
 		int c = 0;
-		for (unsigned i = 0; i < line.size(); c++)
-			i += TerminalData::UTF8CharLength(line[i].mChar);
+		for (size_t i = 0; i < line.size(); c++)
+			i += static_cast<size_t>(TerminalData::UTF8CharLength(
+				line[i].mChar, line.size() - i));
 		return c;
 	}
 
@@ -375,14 +380,15 @@ namespace imterm {
 			return 0;
 		auto& line = mLines[aLine];
 		int col = 0;
-		for (unsigned i = 0; i < line.size(); )
+		for (size_t i = 0; i < line.size(); )
 		{
 			auto c = line[i].mChar;
 			if (c == '\t')
 				col = (col / mTabSize) * mTabSize + mTabSize;
 			else
 				col++;
-			i += TerminalData::UTF8CharLength(c);
+			i += static_cast<size_t>(TerminalData::UTF8CharLength(
+				c, line.size() - i));
 		}
 		return col;
 	}

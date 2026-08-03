@@ -1,7 +1,11 @@
 #pragma once
 
-#include <assert.h>
+#include <cstdint>
+#include <memory>
 #include <queue>
+#include <span>
+#include <vector>
+
 #include "terminal_data.h"
 #include "escape_sequence_parser.h"
 #include "coordinates.h"
@@ -88,10 +92,15 @@ namespace imterm {
 		TerminalState(std::shared_ptr<TerminalData> aTerminalData, NewLineMode aNewLineMode);
 		~TerminalState();
 
-		void Update(EscapeSequenceParser::ParseResult aParseResult);
+		enum class CommandResult {
+			Ignored,
+			Applied
+		};
+
+		CommandResult Update(const EscapeSequenceParser::ParseResult& aParseResult);
 		void SetBounds(Coordinates aBounds);
 
-		int Input(const std::vector<uint8_t>& aVector);
+		int Input(std::span<const uint8_t> aBytes);
 
 		const Coordinates& GetBounds()
 		{
@@ -110,22 +119,17 @@ namespace imterm {
 			return mCursorPos;
 		}
 
-		Coordinates getPositionRelative(size_t totalLines) {
+		Coordinates getPositionRelative(size_t totalLines) const {
 			return getPositionRelative(totalLines, mCursorPos);
 		}
 
-		Coordinates getPositionRelative(size_t totalLines, Coordinates position) {
-			if ((totalLines - 1) >= mBounds.mLine) {
-				return Coordinates((totalLines - 1) - (mBounds.mLine - position.mLine), position.mColumn);
-			}
-			return position;
-		}
+		Coordinates getPositionRelative(size_t totalLines, Coordinates position) const;
 
-		TerminalGraphicsState::Flags const getForegroundColor() {
+		TerminalGraphicsState::Flags getForegroundColor() {
 			return mGraphics.getForegroundColor();
 		}
 
-		TerminalGraphicsState::Flags const getBackgroundColor() {
+		TerminalGraphicsState::Flags getBackgroundColor() {
 			return mGraphics.getBackgroundColor();
 		}
 
@@ -148,7 +152,9 @@ namespace imterm {
 
 	private:
 
-		void SanitzeCursorPosition();
+		void SanitizeCursorPosition();
+		void EraseRange(Coordinates begin, Coordinates end);
+		void InputPrintableByte(uint8_t value);
 
 
 		Coordinates mBounds;
@@ -163,6 +169,7 @@ namespace imterm {
 		NewLineMode mNewLineMode;
 
 		EscapeSequenceParser mAnsiEscSeqParser;
+		std::vector<uint8_t> mPendingUtf8;
 
 	};
 

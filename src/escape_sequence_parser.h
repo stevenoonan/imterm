@@ -1,12 +1,8 @@
 #pragma once
 
-#include <algorithm>
-#include <string>
-#include <stdexcept>
-#include <vector>
-#include <string>
-#include <map>
 #include <cstdint>
+#include <cstddef>
+#include <vector>
 
 #include "coordinates.h"
 
@@ -50,7 +46,11 @@ public:
 		NotReady,
 		BadEsc,
 		BadCsi,
-		BadData
+		BadData,
+		SequenceTooLong,
+		ArgumentTooLong,
+		TooManyArguments,
+		NumericOverflow
 	};
 
 	/**
@@ -168,7 +168,11 @@ public:
 	};
 
 	EscapeSequenceParser();
-	~EscapeSequenceParser();
+
+	static constexpr std::size_t MaxSequenceLength = 128;
+	static constexpr std::size_t MaxArgumentDigits = 6;
+	static constexpr std::size_t MaxArguments = 16;
+	static constexpr int MaxNumericValue = 65535;
 
 	const ParseResult& Parse(uint8_t input);
 
@@ -183,10 +187,14 @@ private:
 	Mode mMode;
 
 	EscapeIdentifier mIdentifier;
-	std::vector<uint8_t> mDataElementInProcess;
+	int mDataElementInProcess = 0;
+	std::size_t mDataElementDigits = 0;
 	std::vector<int> mDataStaged;
+	std::size_t mSequenceLength = 0;
 
 	ParseResult mParseResult;
 
-	void ConvertDataElementInProcessToStagedInt();
+	bool StageDataElement();
+	void ResetForNextByte();
+	void Fail(Error error);
 };
