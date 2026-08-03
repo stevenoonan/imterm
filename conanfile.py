@@ -23,6 +23,9 @@ class ImGuiExample(ConanFile):
         if self.settings.os == "Linux":
             self.requires("libalsa/1.2.13")
 
+    def build_requirements(self):
+        self.test_requires("gtest/1.17.0")
+
     def generate(self):
 
         imgui_res_bindings = os.path.join(self.dependencies["imgui"].package_folder,

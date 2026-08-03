@@ -9,3 +9,5 @@
 /CMakeUserPresets.json
 /deps/conan
 /.venv
+imterm.ini
+imterm.toml

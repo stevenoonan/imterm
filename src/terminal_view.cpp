@@ -13,6 +13,7 @@
 #include "escape_sequence_parser.h"
 #include "coordinates.h"
 #include "terminal_data.h"
+#include "terminal_input.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h" // for imGui::GetCurrentWindow()
@@ -441,18 +442,7 @@ void TerminalView::HandleKeyboardInputs()
 		io.WantCaptureKeyboard = true;
 		io.WantTextInput = true;
 
-		static const auto* input_backspace = "\x7F";
-		static const auto* input_enter = "\n";
-		static const auto* input_tab = "\t";
-		static const auto* input_up_arrow = "\x1B[A";
-		static const auto* input_down_arrow = "\x1B[B";
-		static const auto* input_right_arrow = "\x1B[C";
-		static const auto* input_left_arrow = "\x1B[D";
-
-		static const auto* input_home = "\x1B[1~";
 		static const auto* input_insert = "\x1B[2~";
-		static const auto* input_delete = "\x1B[3~";
-		static const auto* input_end = "\x1B[4~";
 		static const auto* input_pgup = "\x1B[5~";
 		static const auto* input_pgdn = "\x1B[6~";
 		static const auto* input_home2 = "\x1B[7~";
@@ -483,32 +473,32 @@ void TerminalView::HandleKeyboardInputs()
 
 		/* handle Delete, Backspace, Enter / Return, Tab */
 		if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
-			AddKeyboardInput(input_delete);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Delete)));
 		}
 		else if (!ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
-			AddKeyboardInput(input_backspace);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Backspace)));
 		}
 		else if (!ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_Insert))
 			Paste();
 		else if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_V))
 			Paste();
 		else if (!ctrl && !shift && !alt && (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)))
-			AddKeyboardInput(input_enter);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Enter)));
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Tab))
-			AddKeyboardInput(input_tab);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Tab)));
 
 
 		if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-			AddKeyboardInput(input_up_arrow);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Up)));
 		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-			AddKeyboardInput(input_down_arrow);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Down)));
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-			AddKeyboardInput(input_left_arrow);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Left)));
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-			AddKeyboardInput(input_right_arrow);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Right)));
 
 		} 
 		else if (!alt && ImGui::IsKeyPressed(ImGuiKey_PageUp))
@@ -521,11 +511,11 @@ void TerminalView::HandleKeyboardInputs()
 			MoveBottom(shift);
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_Home)) {
 			//MoveHome(shift);
-			AddKeyboardInput(input_home);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::Home)));
 		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End)) {
 			//MoveHome(shift);
-			AddKeyboardInput(input_end);
+			AddKeyboardInput(std::string(GetTerminalKeySequence(TerminalKey::End)));
 		}
 		else if (!ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_End))
 			MoveEnd(shift);
@@ -550,9 +540,10 @@ void TerminalView::HandleKeyboardInputs()
 				if (ImGui::IsKeyPressed((ImGuiKey)key)) {
 					auto it = imguiKeyToAscii.find(static_cast<ImGuiKey>(key));
 					if (it != imguiKeyToAscii.end()) {
-						char asciiChar = it->second;
-						asciiChar &= 0x1F;
-						AddKeyboardInput(asciiChar);
+							const auto control_character = GetControlCharacter(it->second);
+							if (control_character) {
+								AddKeyboardInput(*control_character);
+							}
 
 					}
 				}

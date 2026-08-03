@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.6) 
+cmake_minimum_required(VERSION 3.15)
 
 if(POLICY CMP0048)
     #policy for VERSION in cmake 3.0
@@ -8,6 +8,8 @@ endif()
 
 
 PROJECT(imterm LANGUAGES C CXX)
+
+include(CTest)
 
 # Set C++20 standard
 set(CMAKE_CXX_STANDARD 20) 
@@ -22,6 +24,19 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_PROTOTYPES")
 
 option(GLFW_USE_SUBMODULE "Use deps/glfw instead of package manager provided glfw" OFF)
 option(IMGUI_USE_SUBMODULE "Use deps/imgui instead of package manager provided imgui" OFF)
+option(IMTERM_ENABLE_WARNINGS "Enable compiler warnings for first-party library and test targets" ON)
+
+function(imterm_enable_warnings target)
+	if(NOT IMTERM_ENABLE_WARNINGS)
+		return()
+	endif()
+
+	if(MSVC)
+		target_compile_options(${target} PRIVATE /W4)
+	else()
+		target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+	endif()
+endfunction()
 
 # GLFW
 if (GLFW_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/glfw/CMakeLists.txt")
@@ -96,24 +111,37 @@ include_directories(deps/serial/include)
 add_subdirectory(deps/ImGuiFileDialog)
 include_directories(deps/ImGuiFileDialog)
 
-# Main code
+# Terminal core. Keep this target independent of ImGui, Vulkan, and serial I/O so
+# its behavior can be exercised by tests without a display or hardware.
 set(SRC_DIR src)
-set(IMTERM_SRCS
-	${SRC_DIR}/capture.cpp
-	${SRC_DIR}/capture.h
+set(IMTERM_CORE_SRCS
 	${SRC_DIR}/coordinates.h
 	${SRC_DIR}/escape_sequence_parser.cpp
 	${SRC_DIR}/escape_sequence_parser.h
-	${SRC_DIR}/imterm.cpp
 	${SRC_DIR}/terminal_data.cpp
 	${SRC_DIR}/terminal_data.h
 	${SRC_DIR}/terminal_state.cpp
 	${SRC_DIR}/terminal_state.h
-	${SRC_DIR}/terminal_view.cpp
-	${SRC_DIR}/terminal_view.h
 	${SRC_DIR}/terminal_logger.cpp
 	${SRC_DIR}/terminal_logger.h
+	${SRC_DIR}/terminal_input.cpp
+	${SRC_DIR}/terminal_input.h
+	${SRC_DIR}/terminal_types.h
 	${SRC_DIR}/vector_timed.h
+)
+
+add_library(imterm_core STATIC ${IMTERM_CORE_SRCS})
+target_include_directories(imterm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/${SRC_DIR})
+target_link_libraries(imterm_core PRIVATE beep)
+imterm_enable_warnings(imterm_core)
+
+# Main application
+set(IMTERM_SRCS
+	${SRC_DIR}/capture.cpp
+	${SRC_DIR}/capture.h
+	${SRC_DIR}/imterm.cpp
+	${SRC_DIR}/terminal_view.cpp
+	${SRC_DIR}/terminal_view.h
 )
 
 add_executable(imterm WIN32 
@@ -123,6 +151,7 @@ add_executable(imterm WIN32
 
 target_link_libraries(
 	imterm
+	imterm_core
 	serial
 	beep
 	imgui::imgui
@@ -137,6 +166,23 @@ target_compile_definitions(imterm PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLET
 
 if (IMGUI_SHOW_DEMO_WINDOW)
     target_compile_definitions(imterm PUBLIC IMGUI_SHOW_DEMO_WINDOW)
+endif()
+
+if(BUILD_TESTING)
+	find_package(GTest CONFIG REQUIRED)
+
+	add_executable(imterm_tests
+		tests/escape_sequence_parser_test.cpp
+		tests/terminal_data_test.cpp
+		tests/terminal_input_test.cpp
+		tests/terminal_logger_test.cpp
+		tests/terminal_state_test.cpp
+	)
+	target_link_libraries(imterm_tests PRIVATE imterm_core GTest::gtest_main)
+	imterm_enable_warnings(imterm_tests)
+
+	include(GoogleTest)
+	gtest_discover_tests(imterm_tests DISCOVERY_MODE PRE_TEST)
 endif()
 
 #add_custom_target(copy_font 
