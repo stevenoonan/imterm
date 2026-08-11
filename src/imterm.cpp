@@ -364,6 +364,15 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+static void glfw_framebuffer_size_callback(GLFWwindow*, int width, int height)
+{
+    // Rebuild before rendering the next frame.  Waiting for acquire/present to
+    // return VK_ERROR_OUT_OF_DATE_KHR leaves some compositors displaying a
+    // scaled copy of the old framebuffer after a window resize.
+    if (width > 0 && height > 0)
+        g_SwapChainRebuild = true;
+}
+
 static std::filesystem::path GetExecutableDirectory()
 {
 #ifdef _WIN32
@@ -453,6 +462,12 @@ int __stdcall WinMain(
         static_cast<int>(1280 * interface_scale),
         static_cast<int>(720 * interface_scale),
         "imterm", NULL, NULL);
+    if (window == NULL)
+    {
+        glfwTerminate();
+        return 1;
+    }
+    glfwSetFramebufferSizeCallback(window, glfw_framebuffer_size_callback);
 
     // Setup Vulkan
     if (!glfwVulkanSupported())
@@ -551,15 +566,24 @@ int __stdcall WinMain(
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         glfwPollEvents();
 
-        // Resize swap chain?
+        // Resize the swap chain as soon as GLFW reports a new framebuffer
+        // size.  The Vulkan out-of-date result remains a fallback, but it may
+        // arrive too late to prevent the window system from stretching the
+        // previous frame to fit the resized surface.
+        int framebuffer_width, framebuffer_height;
+        glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+        if (framebuffer_width != static_cast<int>(wd->Width)
+            || framebuffer_height != static_cast<int>(wd->Height))
+        {
+            g_SwapChainRebuild = true;
+        }
+
         if (g_SwapChainRebuild)
         {
-            int width, height;
-            glfwGetFramebufferSize(window, &width, &height);
-            if (width > 0 && height > 0)
+            if (framebuffer_width > 0 && framebuffer_height > 0)
             {
                 ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
-                ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily, g_Allocator, width, height, g_MinImageCount, 0);
+                ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily, g_Allocator, framebuffer_width, framebuffer_height, g_MinImageCount, 0);
                 g_MainWindowData.FrameIndex = 0;
                 g_SwapChainRebuild = false;
             }
