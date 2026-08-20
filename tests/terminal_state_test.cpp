@@ -18,7 +18,7 @@ protected:
         data = std::make_shared<imterm::TerminalData>();
         state = std::make_unique<imterm::TerminalState>(
             data, imterm::TerminalState::NewLineMode::Strict);
-        state->SetBounds(Coordinates(2, 79));
+        state->SetViewportSize(3, 80);
     }
 
     std::shared_ptr<imterm::TerminalData> data;
@@ -93,6 +93,44 @@ TEST_F(TerminalStateTest, MovesCursorAndPadsBeforeWriting)
     EXPECT_EQ(state->getPosition(), Coordinates(0, 4));
 }
 
+TEST_F(TerminalStateTest, SupportedCursorCommandsWorkAcrossEveryInputSplit)
+{
+    struct CursorCase {
+        std::string mSequence;
+        Coordinates mExpected;
+    };
+    const std::vector<CursorCase> cases = {
+        {"\x1B[H", Coordinates(0, 0)},
+        {"\x1B[2;3H", Coordinates(1, 2)},
+        {"\x1B[2;3f", Coordinates(1, 2)},
+        {"\x1B[A", Coordinates(1, 3)},
+        {"\x1B[2B", Coordinates(4, 3)},
+        {"\x1B[C", Coordinates(2, 4)},
+        {"\x1B[2D", Coordinates(2, 1)},
+        {"\x1B[E", Coordinates(3, 0)},
+        {"\x1B[F", Coordinates(1, 0)},
+        {"\x1B[G", Coordinates(2, 0)},
+        {"\x1B[s\x1B[1;1H\x1B[u", Coordinates(2, 3)},
+    };
+
+    for (const CursorCase& testCase : cases) {
+        const auto sequence = imterm::test::Bytes(testCase.mSequence);
+        for (size_t split = 0; split <= sequence.size(); ++split) {
+            SCOPED_TRACE(testCase.mSequence + " split=" + std::to_string(split));
+            data = std::make_shared<imterm::TerminalData>();
+            state = std::make_unique<imterm::TerminalState>(
+                data, imterm::TerminalState::NewLineMode::Strict);
+            state->SetViewportSize(5, 10);
+            state->Input(imterm::test::Bytes("\x1B[3;4H"));
+
+            state->Input(std::span(sequence).first(split));
+            state->Input(std::span(sequence).subspan(split));
+
+            EXPECT_EQ(state->getPosition(), testCase.mExpected);
+        }
+    }
+}
+
 TEST_F(TerminalStateTest, ErasesLineAfterCursor)
 {
     state->Input(imterm::test::Bytes("abc\x1B[2D\x1B[K"));
@@ -102,9 +140,93 @@ TEST_F(TerminalStateTest, ErasesLineAfterCursor)
     EXPECT_EQ(state->getPosition(), Coordinates(0, 1));
 }
 
+TEST_F(TerminalStateTest, LineEraseModesUseInclusiveCursorSemantics)
+{
+    struct EraseCase {
+        std::string mSequence;
+        std::string mExpected;
+    };
+    const std::vector<EraseCase> cases = {
+        {"\x1B[K", "ab"},
+        {"\x1B[0K", "ab"},
+        {"\x1B[1K", "   def"},
+        {"\x1B[2K", ""},
+    };
+
+    for (const EraseCase& testCase : cases) {
+        const auto sequence = imterm::test::Bytes(testCase.mSequence);
+        for (size_t split = 0; split <= sequence.size(); ++split) {
+            SCOPED_TRACE(testCase.mSequence + " split=" + std::to_string(split));
+            data->SetText("abcdef");
+            state->Input(imterm::test::Bytes("\x1B[1;3H"));
+            state->Input(std::span(sequence).first(split));
+            state->Input(std::span(sequence).subspan(split));
+            EXPECT_EQ(imterm::test::LineText(data->GetLine(0)),
+                testCase.mExpected);
+        }
+    }
+}
+
+TEST_F(TerminalStateTest, DisplayEraseModesAffectOnlyTheViewport)
+{
+    struct EraseCase {
+        std::string mSequence;
+        std::vector<std::string> mExpected;
+    };
+    const std::vector<EraseCase> cases = {
+        {"\x1B[J", {"abc", "d", ""}},
+        {"\x1B[0J", {"abc", "d", ""}},
+        {"\x1B[1J", {"", "  f", "ghi"}},
+        {"\x1B[2J", {"", "", ""}},
+    };
+
+    for (const EraseCase& testCase : cases) {
+        const auto sequence = imterm::test::Bytes(testCase.mSequence);
+        for (size_t split = 0; split <= sequence.size(); ++split) {
+            SCOPED_TRACE(testCase.mSequence + " split=" + std::to_string(split));
+            data->SetTextLines({"abc", "def", "ghi"});
+            state->Input(imterm::test::Bytes("\x1B[2;2H"));
+            state->Input(std::span(sequence).first(split));
+            state->Input(std::span(sequence).subspan(split));
+            EXPECT_EQ(data->GetTextLines(), testCase.mExpected);
+        }
+    }
+}
+
+TEST_F(TerminalStateTest, EraseSavedLinesRemovesOnlyScrollback)
+{
+    state->SetViewportSize(2, 80);
+    data->SetTextLines({"0", "1", "2", "3", "4"});
+
+    state->Input(imterm::test::Bytes("\x1B[3J"));
+
+    EXPECT_EQ(data->GetTextLines(), std::vector<std::string>({"3", "4"}));
+}
+
+TEST_F(TerminalStateTest, EraseUsesRenderedColumnsForTabsAndUtf8)
+{
+    data->SetText("\tAB");
+    state->Input(imterm::test::Bytes("\x1B[3G\x1B[K"));
+    EXPECT_TRUE(data->GetLine(0).empty());
+
+    data->SetText("");
+    state->Input(imterm::test::Bytes("\x1B[H"));
+    state->Input(imterm::test::Bytes({0xE2, 0x82, 0xAC, 'A'}));
+    EXPECT_EQ(state->getPosition(), Coordinates(0, 2));
+    state->Input(imterm::test::Bytes("\x1B[D\x1B[K"));
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)),
+        std::string("\xE2\x82\xAC"));
+
+    data->SetText("");
+    state->Input(imterm::test::Bytes("\x1B[H"));
+    state->Input(imterm::test::Bytes({0xE2, 0x82, 0xAC, 'A'}));
+    state->Input(imterm::test::Bytes("\x1B[2D\x1B[1K"));
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), " A");
+}
+
 TEST_F(TerminalStateTest, PreservesScrollbackWhenTheViewportFills)
 {
-    state->SetBounds(Coordinates(1, 79));
+    state->SetViewportSize(2, 80);
     state->SetNewLineMode(imterm::TerminalState::NewLineMode::AddCrToLf);
 
     EXPECT_EQ(state->Input(imterm::test::Bytes("0\n1\n2")), 2);
@@ -114,6 +236,22 @@ TEST_F(TerminalStateTest, PreservesScrollbackWhenTheViewportFills)
     EXPECT_EQ(imterm::test::LineText(data->GetLine(1)), "1");
     EXPECT_EQ(imterm::test::LineText(data->GetLine(2)), "2");
     EXPECT_EQ(state->getPositionRelative(data->GetLineCount()), Coordinates(2, 1));
+}
+
+TEST_F(TerminalStateTest, ResizePreservesTheCursorBufferRow)
+{
+    state->SetViewportSize(2, 80);
+    state->SetNewLineMode(imterm::TerminalState::NewLineMode::AddCrToLf);
+    state->Input(imterm::test::Bytes("0\n1\n2"));
+    ASSERT_EQ(state->getPositionRelative(data->GetLineCount()),
+        Coordinates(2, 1));
+
+    state->SetViewportSize(3, 80);
+    EXPECT_EQ(state->getPositionRelative(data->GetLineCount()),
+        Coordinates(2, 1));
+    state->SetViewportSize(2, 80);
+    EXPECT_EQ(state->getPositionRelative(data->GetLineCount()),
+        Coordinates(2, 1));
 }
 
 TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
@@ -131,7 +269,7 @@ TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
             data = std::make_shared<imterm::TerminalData>();
             state = std::make_unique<imterm::TerminalState>(
                 data, imterm::TerminalState::NewLineMode::Strict);
-            state->SetBounds(Coordinates(2, 79));
+            state->SetViewportSize(3, 80);
 
             state->Input(std::span(sequence).first(split));
             EXPECT_TRUE(data->GetLine(0).empty()) << "split=" << split;
@@ -153,9 +291,103 @@ TEST_F(TerminalStateTest, IgnoresUnknownSgrAndCsiCommands)
     EXPECT_EQ(data->GetLine(0).back().mColorIndex, imterm::PaletteIndex::Red);
 }
 
+TEST_F(TerminalStateTest, SgrFormattingAndResetsAreAppliedIndependently)
+{
+    const auto setSequence = imterm::test::Bytes(
+        "\x1B[1;2;3;4;5;7;8;9m");
+    const auto resetSequence = imterm::test::Bytes(
+        "\x1B[22;23;24;25;27;28;29m");
+    for (size_t split = 0; split <= setSequence.size(); ++split) {
+        data = std::make_shared<imterm::TerminalData>();
+        state = std::make_unique<imterm::TerminalState>(
+            data, imterm::TerminalState::NewLineMode::Strict);
+        state->SetViewportSize(3, 80);
+        state->Input(std::span(setSequence).first(split));
+        state->Input(std::span(setSequence).subspan(split));
+        EXPECT_TRUE(state->IsBold()) << "split=" << split;
+        EXPECT_TRUE(state->IsDim()) << "split=" << split;
+        EXPECT_TRUE(state->IsItalic()) << "split=" << split;
+        EXPECT_TRUE(state->IsUnderline()) << "split=" << split;
+        EXPECT_TRUE(state->IsBlinking()) << "split=" << split;
+        EXPECT_TRUE(state->IsInverse()) << "split=" << split;
+        EXPECT_TRUE(state->IsHidden()) << "split=" << split;
+        EXPECT_TRUE(state->IsStrikethrough()) << "split=" << split;
+
+        state->Input(resetSequence);
+        EXPECT_FALSE(state->IsBold()) << "split=" << split;
+        EXPECT_FALSE(state->IsDim()) << "split=" << split;
+        EXPECT_FALSE(state->IsItalic()) << "split=" << split;
+        EXPECT_FALSE(state->IsUnderline()) << "split=" << split;
+        EXPECT_FALSE(state->IsBlinking()) << "split=" << split;
+        EXPECT_FALSE(state->IsInverse()) << "split=" << split;
+        EXPECT_FALSE(state->IsHidden()) << "split=" << split;
+        EXPECT_FALSE(state->IsStrikethrough()) << "split=" << split;
+    }
+}
+
+TEST_F(TerminalStateTest, SupportedSgrColorsAreTableDriven)
+{
+    const std::vector<std::pair<int, imterm::PaletteIndex>> colors = {
+        {30, imterm::PaletteIndex::Black},
+        {31, imterm::PaletteIndex::Red},
+        {32, imterm::PaletteIndex::Green},
+        {33, imterm::PaletteIndex::Yellow},
+        {34, imterm::PaletteIndex::Blue},
+        {35, imterm::PaletteIndex::Magenta},
+        {36, imterm::PaletteIndex::Cyan},
+        {37, imterm::PaletteIndex::White},
+    };
+
+    int column = 0;
+    for (const auto& [code, expected] : colors) {
+        state->Input(imterm::test::Bytes(
+            "\x1B[0;" + std::to_string(code) + "mX"));
+        EXPECT_EQ(data->GetLine(0)[static_cast<size_t>(column)].mColorIndex,
+            expected) << "SGR=" << code;
+        ++column;
+    }
+
+    for (const auto& [foregroundCode, expected] : colors) {
+        const int backgroundCode = foregroundCode + 10;
+        state->Input(imterm::test::Bytes(
+            "\x1B[0;" + std::to_string(backgroundCode) + ";7mX"));
+        EXPECT_EQ(data->GetLine(0)[static_cast<size_t>(column)].mColorIndex,
+            expected) << "SGR=" << backgroundCode << " inverse";
+        ++column;
+    }
+}
+
+TEST_F(TerminalStateTest, DefaultSgrColorsResetForegroundAndBackground)
+{
+    state->Input(imterm::test::Bytes("\x1B[31mR\x1B[39mD"));
+    ASSERT_EQ(data->GetLine(0).size(), 2U);
+    EXPECT_EQ(data->GetLine(0)[0].mColorIndex, imterm::PaletteIndex::Red);
+    EXPECT_EQ(data->GetLine(0)[1].mColorIndex, imterm::PaletteIndex::Default);
+
+    state->Input(imterm::test::Bytes(
+        "\x1B[0;41;7mR\x1B[49mD"));
+    ASSERT_EQ(data->GetLine(0).size(), 4U);
+    EXPECT_EQ(data->GetLine(0)[2].mColorIndex, imterm::PaletteIndex::Red);
+    EXPECT_EQ(data->GetLine(0)[3].mColorIndex, imterm::PaletteIndex::Default);
+}
+
+TEST_F(TerminalStateTest, StatusReportsUseOneBasedScreenCoordinates)
+{
+    const auto report = imterm::test::Bytes("\x1B[6n");
+    for (size_t split = 0; split <= report.size(); ++split) {
+        state->Input(imterm::test::Bytes("\x1B[2;3H"));
+        state->Input(std::span(report).first(split));
+        state->Input(std::span(report).subspan(split));
+
+        ASSERT_TRUE(state->TerminalOutputAvailable()) << "split=" << split;
+        EXPECT_EQ(state->GetTerminalOutput(), imterm::test::Bytes("\x1B[2;3R"))
+            << "split=" << split;
+    }
+}
+
 TEST_F(TerminalStateTest, ClampsLargeCursorMovementsInEveryDirection)
 {
-    state->SetBounds(Coordinates(4, 9));
+    state->SetViewportSize(5, 10);
 
     state->Input(imterm::test::Bytes("\x1B[65535C\x1B[65535B"));
     EXPECT_EQ(state->getPosition(), Coordinates(4, 9));
@@ -177,7 +409,7 @@ TEST_F(TerminalStateTest, MalformedSequenceRecoversAtEveryChunkBoundary)
         data = std::make_shared<imterm::TerminalData>();
         state = std::make_unique<imterm::TerminalState>(
             data, imterm::TerminalState::NewLineMode::Strict);
-        state->SetBounds(Coordinates(2, 79));
+        state->SetViewportSize(3, 80);
 
         state->Input(std::span(malformed).first(split));
         state->Input(std::span(malformed).subspan(split));
@@ -213,7 +445,7 @@ TEST_F(TerminalStateTest, ErasingBeyondAShortLineUsesValidatedIterators)
 
 TEST_F(TerminalStateTest, DeterministicRandomInputDoesNotCrashOrGrowWithoutBound)
 {
-    state->SetBounds(Coordinates(4, 79));
+    state->SetViewportSize(5, 80);
     std::mt19937 generator(0x1A2B3C4D);
     std::uniform_int_distribution<int> distribution(0, 255);
     std::vector<uint8_t> bytes(100000);

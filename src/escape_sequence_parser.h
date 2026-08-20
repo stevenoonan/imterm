@@ -54,11 +54,9 @@ public:
 	};
 
 	/**
-	 * @brief The raw 8-bit identifier of an escape sequence. Using this along
-	 * with the 'arguments' of the incoming data stream will result in a 
-	 * CommandType. In many cases, but not all, there is a 1 to 1 correlation
-	 * between EscapeIdentifier and CommandType. EscapeIdentifier is only used
-	 * for the parsing of data, thereafter CommandType is used.
+	 * @brief The raw 8-bit identifier of an escape sequence. The lexical parser
+	 * preserves this and the raw arguments; DecodeTerminalCommand converts that
+	 * representation into a typed command before terminal state is changed.
 	*/
 	enum class EscapeIdentifier : uint8_t {
 		Undefined = 0,
@@ -82,74 +80,6 @@ public:
 	};
 
 
-	/**
-	 * @brief An incoming command to change the state and/or request data from
-	 * the terminal.
-	*/
-	enum class CommandType {
-		None,
-		MoveCursorToHome,		  // ESC[H                    moves cursor to home position(0, 0)
-		MoveCursorAbs,            // ESC[{line}; {column}H    moves cursor to line #, column #
-		                          // ESC[{line}; {column}f    moves cursor to line #, column #
-		MoveCursorUp,			  // ESC[#A                   moves cursor up # lines
-		MoveCursorDown,           // ESC[#B                   moves cursor down # lines
-		MoveCursorRight,          // ESC[#C                   moves cursor right # columns
-		MoveCursorLeft,           // ESC[#D                   moves cursor left # columns
-		MoveCursorDownBeginning,  // ESC[#E                   moves cursor to beginning of next line, # lines down
-		MoveCursorUpBeginning,    // ESC[#F                   moves cursor to beginning of previous line, # lines up
-		MoveCursorCol,            // ESC[#G                   moves cursor to column #
-		DeviceStatusReport, 	  // ESC[5n                   request cursor position(reports as ESC[#; #R)
-		CursorPositionReport, 	  // ESC[6n                   request cursor position(reports as ESC[#; #R)
-		SaveCursorPosition,       // ESC[s                    save cursor position(SCO)
-		RestoreCursorPosition,    // ESC[u                    restores the cursor to the last saved position(SCO)
-		EraseDisplayAfterCursor,  // ESC[J, ESC[0J            erase from cursor until end of screen
-		EraseDisplayBeforeCursor, // ESC[1J                   erase from cursor to beginning of screen
-		EraseDisplay,             // ESC[2J                   erase entire screen
-		EraseSavedLines,          // ESC[3J                   erase saved lines
-		EraseLineAfterCursor,     // ESC[K, ESC[0K            erase from cursor to end of line
-		EraseLineBeforeCursor,    // ESC[1K                   erase start of line to the cursor
-		EraseLine,                // ESC[2K                   erase the entire line
-		SetGraphics,              // ESC[{..};{..}m           Background color, foreground, color, bold, underline, etc.
-	};
-
-	
-	enum class GraphicsCommands {
-		Reset = 0,
-		Bold = 1,
-		Dim = 2,
-		Italic = 3,
-		Underline = 4,
-		Blinking = 5,
-		Inverse = 7,
-		Hidden = 8,
-		Strikethrough = 9,
-		BoldOrDimReset = 22,
-		ItalicReset = 23,
-		UnderlineReset = 24,
-		BlinkingReset = 25,
-		InverseReset = 27,
-		HiddenReset = 28,
-		StrikethroughReset = 29,
-		BlackFg = 30,
-		RedFg = 31,
-		GreenFg = 32,
-		YellowFg = 33,
-		BlueFg = 34,
-		MagentaFg = 35,
-		CyanFg = 36,
-		WhiteFg = 37,
-		DefaultFg = 39,
-		BlackBg = 40,
-		RedBg = 41,
-		GreenBg = 42,
-		YellowBg = 43,
-		BlueBg = 44,
-		MagentaBg = 45,
-		CyanBg = 46,
-		WhiteBg = 47,
-		DefaultBg = 49
-	};
-
 	enum Mode {
 		None,
 		Screen,
@@ -162,7 +92,6 @@ public:
 		Stage mStage;
 		Error mError;
 		EscapeIdentifier mIdentifier;
-		CommandType mCommand;
 		Mode mMode;
 		std::vector<int> mCommandData;
 	};
@@ -189,12 +118,13 @@ private:
 	EscapeIdentifier mIdentifier;
 	int mDataElementInProcess = 0;
 	std::size_t mDataElementDigits = 0;
+	bool mSawDataSeparator = false;
 	std::vector<int> mDataStaged;
 	std::size_t mSequenceLength = 0;
 
 	ParseResult mParseResult;
 
-	bool StageDataElement();
+	bool StageDataElement(bool aIsFinalElement = false);
 	void ResetForNextByte();
 	void Fail(Error error);
 };

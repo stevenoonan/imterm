@@ -2,13 +2,16 @@
 
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <queue>
 #include <span>
 #include <vector>
 
 #include "terminal_data.h"
+#include "terminal_command.h"
 #include "escape_sequence_parser.h"
 #include "coordinates.h"
+#include "terminal_coordinates.h"
 
 namespace imterm {
 
@@ -57,22 +60,22 @@ namespace imterm {
 			WhiteBg = 0x8000'0000UL,
 		};
 
-		uint32_t getState() { return mState; }
+		uint32_t getState() const { return mState; }
 		Flags getForegroundColor();
 		Flags getBackgroundColor();
 		Flags getTextFormatting();
 
-		uint32_t Update(EscapeSequenceParser::GraphicsCommands gfxCmd);
+		uint32_t Update(GraphicsCommand aCommand);
 		uint32_t Update(const std::vector<int>& aCommandData);
 
-		bool IsBold() const { return mState & (int)Flags::Bold; }
-		bool IsDim() const { return mState & (int)Flags::Dim; }
-		bool IsItalic() const { return mState & (int)Flags::Italic; }
-		bool IsUnderline() const { return mState & (int)Flags::Underline; }
-		bool IsBlinking() const { return mState & (int)Flags::Blinking; }
-		bool IsInverse() const { return mState & (int)Flags::Inverse; }
-		bool IsHidden() const { return mState & (int)Flags::Hidden; }
-		bool IsStrikethrough() const { return mState & (int)Flags::Strikethrough; }
+		bool IsBold() const { return mState & static_cast<uint32_t>(Flags::Bold); }
+		bool IsDim() const { return mState & static_cast<uint32_t>(Flags::Dim); }
+		bool IsItalic() const { return mState & static_cast<uint32_t>(Flags::Italic); }
+		bool IsUnderline() const { return mState & static_cast<uint32_t>(Flags::Underline); }
+		bool IsBlinking() const { return mState & static_cast<uint32_t>(Flags::Blinking); }
+		bool IsInverse() const { return mState & static_cast<uint32_t>(Flags::Inverse); }
+		bool IsHidden() const { return mState & static_cast<uint32_t>(Flags::Hidden); }
+		bool IsStrikethrough() const { return mState & static_cast<uint32_t>(Flags::Strikethrough); }
 
 	private:
 
@@ -98,32 +101,33 @@ namespace imterm {
 		};
 
 		CommandResult Update(const EscapeSequenceParser::ParseResult& aParseResult);
-		void SetBounds(Coordinates aBounds);
+		CommandResult Apply(const TerminalCommand& aCommand);
+		void SetViewportSize(int aRows, int aColumns);
 
 		int Input(std::span<const uint8_t> aBytes);
 
-		const Coordinates& GetBounds()
-		{
-			return mBounds;
+		ViewportSize GetViewportSize() const { return mViewportSize; }
+		int getColumnIndex() const { return mCursorPosition.mColumn; }
+		int getRowIndex() const { return mCursorPosition.mRow; }
+		Coordinates getPosition() const {
+			return Coordinates(
+				mCursorPosition.mRow, mCursorPosition.mColumn);
 		}
-
-		int& getColumnIndex() {
-			return mCursorPos.mColumn;
-		}
-
-		int& getRowIndex() {
-			return mCursorPos.mLine;
-		}
-
-		Coordinates& getPosition() {
-			return mCursorPos;
-		}
+		ScreenPosition GetScreenPosition() const { return mCursorPosition; }
 
 		Coordinates getPositionRelative(size_t totalLines) const {
-			return getPositionRelative(totalLines, mCursorPos);
+			const BufferPosition position = ToBufferPosition(
+				mCursorPosition, totalLines);
+			const int safeRow = position.mRow
+				> static_cast<size_t>(std::numeric_limits<int>::max())
+				? std::numeric_limits<int>::max()
+				: static_cast<int>(position.mRow);
+			return Coordinates(
+				safeRow, position.mColumn.mValue);
 		}
 
-		Coordinates getPositionRelative(size_t totalLines, Coordinates position) const;
+		BufferPosition ToBufferPosition(
+			ScreenPosition aPosition, size_t aTotalLines) const;
 
 		TerminalGraphicsState::Flags getForegroundColor() {
 			return mGraphics.getForegroundColor();
@@ -153,14 +157,23 @@ namespace imterm {
 	private:
 
 		void SanitizeCursorPosition();
-		void EraseRange(Coordinates begin, Coordinates end);
+		CommandResult ApplyCommand(const MoveCursor& aCommand);
+		CommandResult ApplyCommand(const SetCursorPosition& aCommand);
+		CommandResult ApplyCommand(const SetCursorColumn& aCommand);
+		CommandResult ApplyCommand(const SaveCursor& aCommand);
+		CommandResult ApplyCommand(const RestoreCursor& aCommand);
+		CommandResult ApplyCommand(const EraseDisplay& aCommand);
+		CommandResult ApplyCommand(const EraseLine& aCommand);
+		CommandResult ApplyCommand(const SetGraphics& aCommand);
+		CommandResult ApplyCommand(const RequestStatusReport& aCommand);
+		void EraseLineAtCursor(EraseLine::Area aArea);
+		void EraseDisplayAtCursor(EraseDisplay::Area aArea);
+		size_t GetViewportTopBufferRow(size_t aTotalLines) const;
 		void InputPrintableByte(uint8_t value);
 
-
-		Coordinates mBounds;
-		Coordinates mCursorPos;
-
-		Coordinates mSavedCursorPos;
+		ViewportSize mViewportSize;
+		ScreenPosition mCursorPosition;
+		ScreenPosition mSavedCursorPosition;
 		TerminalGraphicsState mGraphics;
 		std::shared_ptr<TerminalData> mTerminalData = nullptr;
 

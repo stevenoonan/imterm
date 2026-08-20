@@ -7,9 +7,11 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 
 #include "terminal_types.h"
 #include "coordinates.h"
+#include "terminal_coordinates.h"
 #include "terminal_logger.h"
 
 namespace imterm {
@@ -47,8 +49,14 @@ namespace imterm {
 		std::string GetText() const;
 
 		void InputGlyph(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue);
+		void InputBytes(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, std::span<const uint8_t> aBytes);
 		void EraseBytes(size_t aLineIndex, size_t aStart, size_t aEnd);
 		void ReplaceBytesWithSpaces(size_t aLineIndex, size_t aStart, size_t aEnd);
+		void ReplaceLinePrefixWithSpaces(size_t aLineIndex, RenderedColumn aThroughColumn);
+		void ClearLine(size_t aLineIndex);
+
+		ByteOffset GetByteOffset(const BufferPosition& aPosition) const;
+		ByteOffset GetByteOffsetAfter(const BufferPosition& aPosition) const;
 
 		int GetCharacterIndex(const Coordinates& aCoordinates) const;
 		int GetCharacterColumn(int aLine, int aIndex) const;

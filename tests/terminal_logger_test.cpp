@@ -66,7 +66,7 @@ TEST(TerminalLoggerTest, CompletingALineLogsThroughTerminalData)
         auto data = std::make_shared<imterm::TerminalData>(logger);
         imterm::TerminalState state(
             data, imterm::TerminalState::NewLineMode::AddCrToLf);
-        state.SetBounds(Coordinates(0, 79));
+        state.SetViewportSize(1, 80);
 
         state.Input(imterm::test::Bytes("complete\n"));
 
@@ -89,7 +89,7 @@ TEST(TerminalLoggerTest, CursorCreatedRowsKeepThePendingLogLineValid)
         auto data = std::make_shared<imterm::TerminalData>(logger);
         imterm::TerminalState state(
             data, imterm::TerminalState::NewLineMode::AddCrToLf);
-        state.SetBounds(Coordinates(4, 79));
+        state.SetViewportSize(5, 80);
 
         EXPECT_NO_THROW(state.Input(
             imterm::test::Bytes("\x1B[4BX\n")));
@@ -135,7 +135,7 @@ TEST(TerminalLoggerTest, LoggingContinuesAfterAnExplicitClose)
     auto data = std::make_shared<imterm::TerminalData>(logger);
     imterm::TerminalState state(
         data, imterm::TerminalState::NewLineMode::AddCrToLf);
-    state.SetBounds(Coordinates(0, 79));
+    state.SetViewportSize(1, 80);
 
     state.Input(imterm::test::Bytes("first"));
     logger->Close();

@@ -55,6 +55,19 @@ TEST(EscapeSequenceParserTest, ParsesPrivateModeAndDelimitedArguments)
     EXPECT_EQ(result.mCommandData, CommandData({1, 2}));
 }
 
+TEST(EscapeSequenceParserTest, PreservesEmptyArguments)
+{
+    EscapeSequenceParser parser;
+    for (const uint8_t byte : std::vector<uint8_t>{0x1B, '[', ';', '3'}) {
+        parser.Parse(byte);
+    }
+
+    const auto& result = parser.Parse('H');
+
+    EXPECT_EQ(result.mError, EscapeSequenceParser::Error::None);
+    EXPECT_EQ(result.mCommandData, CommandData({0, 3}));
+}
+
 TEST(EscapeSequenceParserTest, ReportsMalformedCsi)
 {
     EscapeSequenceParser parser;
@@ -110,7 +123,7 @@ TEST(EscapeSequenceParserTest, RejectsTooManyArguments)
     EXPECT_EQ(result.mError, EscapeSequenceParser::Error::TooManyArguments);
 }
 
-TEST(EscapeSequenceParserTest, LimitsTotalSequenceLengthAndRecovers)
+TEST(EscapeSequenceParserTest, EmptyArgumentsStillRespectTheArgumentLimit)
 {
     EscapeSequenceParser parser;
     parser.Parse(0x1B);
@@ -119,12 +132,12 @@ TEST(EscapeSequenceParserTest, LimitsTotalSequenceLengthAndRecovers)
     EscapeSequenceParser::Error error = EscapeSequenceParser::Error::NotReady;
     for (size_t index = 0; index < EscapeSequenceParser::MaxSequenceLength; ++index) {
         error = parser.Parse(';').mError;
-        if (error == EscapeSequenceParser::Error::SequenceTooLong) {
+        if (error != EscapeSequenceParser::Error::NotReady) {
             break;
         }
     }
 
-    EXPECT_EQ(error, EscapeSequenceParser::Error::SequenceTooLong);
+    EXPECT_EQ(error, EscapeSequenceParser::Error::TooManyArguments);
     const auto& recovered = parser.Parse('x');
     EXPECT_EQ(recovered.mOutputChar, 'x');
     EXPECT_EQ(recovered.mStage, EscapeSequenceParser::Stage::Inactive);

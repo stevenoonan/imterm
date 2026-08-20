@@ -33,6 +33,9 @@ initialize the submodules.
 
 The [terminal view](src/terminal_view.h) is originally based on [ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit).
 
+The currently supported ANSI/VT behavior and coordinate conventions are
+documented in [terminal protocol semantics](docs/terminal-semantics.md).
+
 The below image shows `imterm` connecting to an ESP32 C6 [console](https://github.com/espressif/esp-idf/tree/master/examples/system/console) project.
 Tab completion is shown.
 

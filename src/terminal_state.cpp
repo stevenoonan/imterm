@@ -21,54 +21,79 @@ namespace imterm {
 
     TerminalGraphicsState::Flags TerminalGraphicsState::getForegroundColor()
     {
-        return Flags(mState & (int)Flags::MaskFgColor);
+        return Flags(mState & static_cast<uint32_t>(Flags::MaskFgColor));
     }
 
     TerminalGraphicsState::Flags TerminalGraphicsState::getBackgroundColor()
     {
-        return Flags(mState & (int)Flags::MaskBgColor);
+        return Flags(mState & static_cast<uint32_t>(Flags::MaskBgColor));
     }
 
     TerminalGraphicsState::Flags TerminalGraphicsState::getTextFormatting()
     {
-        return Flags(mState & (int)Flags::MaskFormat);
+        return Flags(mState & static_cast<uint32_t>(Flags::MaskFormat));
     }
 
-    uint32_t TerminalGraphicsState::Update(EscapeSequenceParser::GraphicsCommands gfxCmd)
+    uint32_t TerminalGraphicsState::Update(GraphicsCommand gfxCmd)
     {
-        int gfxBit = (int)gfxCmd;
-
-        typedef EscapeSequenceParser::GraphicsCommands gfx;
-        if (gfxCmd == gfx::Reset) {
+        using gfx = GraphicsCommand;
+        switch (gfxCmd) {
+        case gfx::Reset:
             mState = 0;
+            break;
+        case gfx::Bold: mState |= static_cast<uint32_t>(Flags::Bold); break;
+        case gfx::Dim: mState |= static_cast<uint32_t>(Flags::Dim); break;
+        case gfx::Italic: mState |= static_cast<uint32_t>(Flags::Italic); break;
+        case gfx::Underline: mState |= static_cast<uint32_t>(Flags::Underline); break;
+        case gfx::Blinking: mState |= static_cast<uint32_t>(Flags::Blinking); break;
+        case gfx::Inverse: mState |= static_cast<uint32_t>(Flags::Inverse); break;
+        case gfx::Hidden: mState |= static_cast<uint32_t>(Flags::Hidden); break;
+        case gfx::Strikethrough: mState |= static_cast<uint32_t>(Flags::Strikethrough); break;
+        case gfx::BoldOrDimReset:
+            mState &= ~(static_cast<uint32_t>(Flags::Bold)
+                | static_cast<uint32_t>(Flags::Dim));
+            break;
+        case gfx::ItalicReset: mState &= ~static_cast<uint32_t>(Flags::Italic); break;
+        case gfx::UnderlineReset: mState &= ~static_cast<uint32_t>(Flags::Underline); break;
+        case gfx::BlinkingReset: mState &= ~static_cast<uint32_t>(Flags::Blinking); break;
+        case gfx::InverseReset: mState &= ~static_cast<uint32_t>(Flags::Inverse); break;
+        case gfx::HiddenReset: mState &= ~static_cast<uint32_t>(Flags::Hidden); break;
+        case gfx::StrikethroughReset:
+            mState &= ~static_cast<uint32_t>(Flags::Strikethrough);
+            break;
+        case gfx::BlackFg:
+        case gfx::RedFg:
+        case gfx::GreenFg:
+        case gfx::YellowFg:
+        case gfx::BlueFg:
+        case gfx::MagentaFg:
+        case gfx::CyanFg:
+        case gfx::WhiteFg:
+            mState &= ~static_cast<uint32_t>(Flags::MaskFgColor);
+            mState |= static_cast<uint32_t>(Flags::BlackFg)
+                << (static_cast<int>(gfxCmd) - static_cast<int>(gfx::BlackFg));
+            break;
+        case gfx::DefaultFg:
+            mState &= ~static_cast<uint32_t>(Flags::MaskFgColor);
+            break;
+        case gfx::BlackBg:
+        case gfx::RedBg:
+        case gfx::GreenBg:
+        case gfx::YellowBg:
+        case gfx::BlueBg:
+        case gfx::MagentaBg:
+        case gfx::CyanBg:
+        case gfx::WhiteBg:
+            mState &= ~static_cast<uint32_t>(Flags::MaskBgColor);
+            mState |= static_cast<uint32_t>(Flags::BlackBg)
+                << (static_cast<int>(gfxCmd) - static_cast<int>(gfx::BlackBg));
+            break;
+        case gfx::DefaultBg:
+            mState &= ~static_cast<uint32_t>(Flags::MaskBgColor);
+            break;
+        default:
+            break;
         }
-        else if (gfxCmd >= gfx::Bold && gfxCmd <= gfx::Strikethrough) {
-            mState |= (int)Flags::Bold << (gfxBit - (int)gfx::Bold);
-        }
-        else if (gfxCmd == gfx::BoldOrDimReset) {
-            mState &= ~((int)Flags::Bold | (int)Flags::Dim);
-        }
-        else if (gfxCmd >= gfx::ItalicReset && gfxCmd <= gfx::StrikethroughReset) {
-            mState &= ~((int)Flags::Italic << (gfxBit - (int)gfx::ItalicReset));
-        }
-        else if (gfxCmd >= gfx::BlackFg && gfxCmd <= gfx::WhiteFg) {
-            // Clear all other colors, then apply this color
-            mState &= ~((int)Flags::MaskFgColor);
-            mState |= (int)Flags::BlackFg << (gfxBit - (int)gfx::BlackFg);
-        }
-        else if (gfxCmd == gfx::DefaultFg) {
-            mState &= ~((int)Flags::MaskFgColor);
-        }
-        else if (gfxCmd >= gfx::BlackBg && gfxCmd <= gfx::WhiteBg) {
-            // Clear all other colors, then apply this color
-            mState &= ~((int)Flags::MaskBgColor);
-            mState |= (int)Flags::BlackBg << (gfxBit - (int)gfx::BlackBg);
-        }
-        else if (gfxCmd == gfx::DefaultBg) {
-            mState &= ~((int)Flags::MaskBgColor);
-        }
-        // Unsupported SGR values are intentionally ignored. They are expected
-        // terminal input and must not terminate an active capture session.
 
         return mState;
     }
@@ -77,7 +102,7 @@ namespace imterm {
     {
         for (int item : aCommandData) {
             {
-                EscapeSequenceParser::GraphicsCommands gfxCmd = static_cast<EscapeSequenceParser::GraphicsCommands>(item);
+                const GraphicsCommand gfxCmd = static_cast<GraphicsCommand>(item);
                 Update(gfxCmd);
             }
         }
@@ -93,314 +118,231 @@ namespace imterm {
     }
 
     TerminalState::CommandResult TerminalState::Update(
-        const EscapeSequenceParser::ParseResult& aSeq)
+        const EscapeSequenceParser::ParseResult& aSequence)
     {
-
-        // If mOutputChar is set, it is not an escape sequence. Otherwise, only 
-        // continue if the sequence has been parsed successfully.
-        if ((aSeq.mOutputChar != 0) || (aSeq.mStage != EscapeSequenceParser::Stage::Inactive) || (aSeq.mError != EscapeSequenceParser::Error::None)) {
-            return CommandResult::Ignored;
-        }
-
-        SanitizeCursorPosition();
-
-        using enum EscapeSequenceParser::CommandType;
-        using enum EscapeSequenceParser::EscapeIdentifier;
-        EscapeSequenceParser::CommandType type = None;
-        bool processed = false;
-
-        Coordinates eraseBegin;
-        Coordinates eraseEnd;
-
-        std::vector<uint8_t> output;
-
-        const auto movePositive = [](int current, int amount, int upper) {
-            return amount >= upper - current ? upper : current + amount;
-        };
-        const auto moveNegative = [](int current, int amount) {
-            return amount >= current ? 0 : current - amount;
-        };
-
-        if (aSeq.mMode == EscapeSequenceParser::Mode::None) {
-
-            switch (aSeq.mIdentifier) {
-            case H_MoveCursor:
-                [[fallthrough]];
-            case f_MoveCursor:
-                if ((aSeq.mIdentifier == H_MoveCursor) && aSeq.mCommandData.size() == 0) {
-                    type = MoveCursorToHome;
-                    mCursorPos.mColumn = 0;
-                    mCursorPos.mLine = 0;
-                }
-                else if (aSeq.mCommandData.size() == 2) {
-                    type = MoveCursorAbs;
-                    mCursorPos.mColumn = aSeq.mCommandData[0];
-                    mCursorPos.mLine = aSeq.mCommandData[1];
-                }
-                break;
-            case A_MoveCursorUp:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorUp;
-                    mCursorPos.mLine = moveNegative(
-                        mCursorPos.mLine, aSeq.mCommandData[0]);
-                }
-                break;
-            case B_MoveCursorDown:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorDown;
-                    mCursorPos.mLine = movePositive(
-                        mCursorPos.mLine, aSeq.mCommandData[0], mBounds.mLine);
-                }
-                break;
-            case C_MoveCursorRight:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorRight;
-                    mCursorPos.mColumn = movePositive(
-                        mCursorPos.mColumn, aSeq.mCommandData[0], mBounds.mColumn);
-                }
-                break;
-            case D_MoveCursorLeft:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorLeft;
-                    mCursorPos.mColumn = moveNegative(
-                        mCursorPos.mColumn, aSeq.mCommandData[0]);
-                }
-                break;
-            case E_MoveCursorDownBeginning:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorDownBeginning;
-                    mCursorPos.mLine = movePositive(
-                        mCursorPos.mLine, aSeq.mCommandData[0], mBounds.mLine);
-                    mCursorPos.mColumn = 0;
-                }
-                break;
-            case F_MoveCursorUpBeginning:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorUpBeginning;
-                    mCursorPos.mLine = moveNegative(
-                        mCursorPos.mLine, aSeq.mCommandData[0]);
-                    mCursorPos.mColumn = 0;
-                }
-                break;
-            case G_MoveCursorCol:
-                if (aSeq.mCommandData.size() == 1) {
-                    type = MoveCursorCol;
-                    mCursorPos.mColumn = aSeq.mCommandData[0];
-                }
-                break;
-            case s_SaveCursorPosition:
-                if (aSeq.mCommandData.size() == 0) {
-                    type = SaveCursorPosition;
-                    mSavedCursorPos = mCursorPos;
-                    processed = true;
-                }
-                break;
-            case u_RestoreCursorPosition:
-                if (aSeq.mCommandData.size() == 0) {
-                    type = RestoreCursorPosition;
-                    mCursorPos = mSavedCursorPos;
-                }
-                break;
-            case J_EraseDisplay:
-
-                if (aSeq.mCommandData.size() == 0) {
-                    type = EraseDisplayAfterCursor;
-                    eraseBegin = mCursorPos;
-                    eraseEnd = mBounds;
-                }
-                else if (aSeq.mCommandData.size() == 1) {
-                    switch (aSeq.mCommandData[0]) {
-                    case 0:
-                        type = EraseDisplayAfterCursor;
-                        eraseBegin = mCursorPos;
-                        eraseEnd = mBounds;
-                        break;
-                    case 1:
-                        type = EraseDisplayBeforeCursor;
-                        eraseEnd = mCursorPos;
-                        break;
-                    case 2:
-                        type = EraseDisplay;
-                        eraseEnd = mBounds;
-                        break;
-                    case 3:
-                        type = EraseSavedLines;
-                        // ??
-                    }
-                }
-                break;
-            case K_EraseLine:
-
-                if (aSeq.mCommandData.size() == 0) {
-                    type = EraseLineAfterCursor;
-                    eraseBegin = mCursorPos;
-                    eraseEnd.mLine = eraseBegin.mLine;
-                    eraseEnd.mColumn = mBounds.mColumn;
-                }
-                else if (aSeq.mCommandData.size() == 1) {
-                    switch (aSeq.mCommandData[0]) {
-                    case 0:
-                        type = EraseLineAfterCursor;
-                        eraseBegin = mCursorPos;
-                        eraseEnd.mLine = eraseBegin.mLine;
-                        eraseEnd.mColumn = mBounds.mColumn;
-                        break;
-                    case 1:
-                        type = EraseLineBeforeCursor;
-                        eraseBegin.mLine = mCursorPos.mLine;
-                        eraseEnd = mCursorPos;
-                        break;
-                    case 2:
-                        type = EraseLine;
-                        eraseBegin.mLine = mCursorPos.mLine;
-                        eraseEnd.mLine = mCursorPos.mLine;
-                        eraseEnd.mColumn = mBounds.mColumn;
-                    }
-                }
-                break;
-
-            case m_SetGraphics:
-                mGraphics.Update(aSeq.mCommandData);
-                type = SetGraphics;
-                processed = true;
-                break;
-
-            case n_RequestReport:
-                if (aSeq.mCommandData.size() == 1) {
-                    if (aSeq.mCommandData[0] == 5) {
-
-                        std::string out("\x1b[0n");
-                        output = std::vector<uint8_t>(out.begin(), out.end());
-                        type = DeviceStatusReport;
-
-                    }
-                    else if (aSeq.mCommandData[0] == 6) {
-
-                        std::string out("\x1b[" + std::to_string(mCursorPos.mLine + 1) + ";" + std::to_string(mCursorPos.mColumn + 1) + "R");
-                        output = std::vector<uint8_t>(out.begin(), out.end());
-                        type = CursorPositionReport;
-                    }
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        else if (aSeq.mMode == EscapeSequenceParser::Mode::Screen) {
-            // Screen modes are not implemented yet. Ignore both supported and
-            // unknown identifiers without treating device input as exceptional.
-        }
-        else if (aSeq.mMode == EscapeSequenceParser::Mode::Private) {
-            // Private modes are not implemented yet.
-        }
-
-        if ((type >= MoveCursorToHome && type <= MoveCursorCol) || (type == RestoreCursorPosition)) {
-            SanitizeCursorPosition();
-            processed = true;
-        }
-
-        if ((type >= EraseDisplayAfterCursor) && (type <= EraseLine)) {
-            EraseRange(eraseBegin, eraseEnd);
-            processed = true;
-        }
-
-        if (output.size() > 0) {
-            mQueuedTerminalOutput.push(std::move(output));
-        }
-
-        return processed ? CommandResult::Applied : CommandResult::Ignored;
+        const auto command = DecodeTerminalCommand(aSequence);
+        return command ? Apply(*command) : CommandResult::Ignored;
     }
 
-    void TerminalState::SetBounds(Coordinates aBounds)
+    TerminalState::CommandResult TerminalState::Apply(
+        const TerminalCommand& aCommand)
     {
-        int lineDelta = aBounds.mLine - mBounds.mLine;
-        mBounds = aBounds;
-        if (lineDelta > 0) {
-            const int lastLine = static_cast<int>(mTerminalData->GetLineCount() - 1);
-            if (lineDelta > lastLine - mCursorPos.mLine) {
-                mCursorPos.mLine = lastLine;
-            }
-            else {
-                mCursorPos.mLine += lineDelta;
-            }
-        }
+        SanitizeCursorPosition();
+        return std::visit(
+            [this](const auto& command) { return ApplyCommand(command); },
+            aCommand);
+    }
 
+    void TerminalState::SetViewportSize(int aRows, int aColumns)
+    {
+        const int previousRows = mViewportSize.mRows;
+        mViewportSize = ViewportSize{
+            std::max(aRows, 1), std::max(aColumns, 1)};
+
+        const int rowDelta = mViewportSize.mRows - previousRows;
+        if (rowDelta > 0) {
+            const int lastExistingRow = static_cast<int>(
+                mTerminalData->GetLineCount() - 1);
+            mCursorPosition.mRow = std::min(
+                mCursorPosition.mRow + rowDelta, lastExistingRow);
+        }
         SanitizeCursorPosition();
     }
 
     void TerminalState::SanitizeCursorPosition()
     {
-        mCursorPos.mColumn = std::clamp(mCursorPos.mColumn, 0, mBounds.mColumn);
-        mCursorPos.mLine = std::clamp(mCursorPos.mLine, 0, mBounds.mLine);
+        mCursorPosition.mColumn = std::clamp(
+            mCursorPosition.mColumn, 0, mViewportSize.mColumns - 1);
+        mCursorPosition.mRow = std::clamp(
+            mCursorPosition.mRow, 0, mViewportSize.mRows - 1);
     }
 
-    Coordinates TerminalState::getPositionRelative(
-        size_t totalLines, Coordinates position) const
+    size_t TerminalState::GetViewportTopBufferRow(size_t aTotalLines) const
     {
-        position.mLine = std::clamp(position.mLine, 0, mBounds.mLine);
-        position.mColumn = std::clamp(position.mColumn, 0, mBounds.mColumn);
-
-        if (totalLines == 0) {
-            return Coordinates();
-        }
-
-        const size_t lastLine = totalLines - 1;
-        if (lastLine >= static_cast<size_t>(mBounds.mLine)) {
-            const size_t relativeLine = lastLine
-                - static_cast<size_t>(mBounds.mLine - position.mLine);
-            const int safeLine = relativeLine > static_cast<size_t>(std::numeric_limits<int>::max())
-                ? std::numeric_limits<int>::max()
-                : static_cast<int>(relativeLine);
-            return Coordinates(safeLine, position.mColumn);
-        }
-
-        return position;
+        const size_t viewportRows = static_cast<size_t>(mViewportSize.mRows);
+        return aTotalLines > viewportRows ? aTotalLines - viewportRows : 0;
     }
 
-    void TerminalState::EraseRange(Coordinates begin, Coordinates end)
+    BufferPosition TerminalState::ToBufferPosition(
+        ScreenPosition aPosition, size_t aTotalLines) const
     {
+        aPosition.mRow = std::clamp(
+            aPosition.mRow, 0, mViewportSize.mRows - 1);
+        aPosition.mColumn = std::clamp(
+            aPosition.mColumn, 0, mViewportSize.mColumns - 1);
+        return BufferPosition{
+            GetViewportTopBufferRow(aTotalLines)
+                + static_cast<size_t>(aPosition.mRow),
+            RenderedColumn{aPosition.mColumn}};
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const MoveCursor& aCommand)
+    {
+        const int amount = std::max(aCommand.mAmount, 1);
+        switch (aCommand.mDirection) {
+        case MoveCursor::Direction::Up:
+            mCursorPosition.mRow = std::max(
+                mCursorPosition.mRow - amount, 0);
+            break;
+        case MoveCursor::Direction::Down:
+            mCursorPosition.mRow = amount
+                >= (mViewportSize.mRows - 1) - mCursorPosition.mRow
+                ? mViewportSize.mRows - 1
+                : mCursorPosition.mRow + amount;
+            break;
+        case MoveCursor::Direction::Right:
+            mCursorPosition.mColumn = amount
+                >= (mViewportSize.mColumns - 1) - mCursorPosition.mColumn
+                ? mViewportSize.mColumns - 1
+                : mCursorPosition.mColumn + amount;
+            break;
+        case MoveCursor::Direction::Left:
+            mCursorPosition.mColumn = std::max(
+                mCursorPosition.mColumn - amount, 0);
+            break;
+        }
+        if (aCommand.mMoveToLineStart) {
+            mCursorPosition.mColumn = 0;
+        }
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const SetCursorPosition& aCommand)
+    {
+        mCursorPosition = aCommand.mPosition;
         SanitizeCursorPosition();
-        begin.mLine = std::clamp(begin.mLine, 0, mBounds.mLine);
-        begin.mColumn = std::clamp(begin.mColumn, 0, mBounds.mColumn);
-        end.mLine = std::clamp(end.mLine, 0, mBounds.mLine);
-        end.mColumn = std::clamp(end.mColumn, 0, mBounds.mColumn);
+        return CommandResult::Applied;
+    }
 
-        begin = getPositionRelative(mTerminalData->GetLineCount(), begin);
-        end = getPositionRelative(mTerminalData->GetLineCount(), end);
-        if (end < begin) {
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const SetCursorColumn& aCommand)
+    {
+        mCursorPosition.mColumn = aCommand.mColumn;
+        SanitizeCursorPosition();
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const SaveCursor&)
+    {
+        mSavedCursorPosition = mCursorPosition;
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const RestoreCursor&)
+    {
+        mCursorPosition = mSavedCursorPosition;
+        SanitizeCursorPosition();
+        return CommandResult::Applied;
+    }
+
+    void TerminalState::EraseLineAtCursor(EraseLine::Area aArea)
+    {
+        const size_t lineCount = mTerminalData->GetLineCount();
+        const BufferPosition position = ToBufferPosition(
+            mCursorPosition, lineCount);
+        if (position.mRow >= lineCount) {
             return;
         }
 
-        const size_t lastRequiredLine = static_cast<size_t>(end.mLine);
-        mTerminalData->EnsureLineExists(lastRequiredLine);
-
-        while (begin < end) {
-            const size_t lineIndex = static_cast<size_t>(begin.mLine);
-            const size_t start = std::min(
-                static_cast<size_t>(begin.mColumn),
-                mTerminalData->GetLineSize(lineIndex));
-
-            if (begin.mLine < end.mLine) {
-                mTerminalData->EraseBytes(
-                    lineIndex, start, mTerminalData->GetLineSize(lineIndex));
-                ++begin.mLine;
-                begin.mColumn = 0;
-                continue;
-            }
-
-            if (end.mColumn == mBounds.mColumn) {
-                mTerminalData->EraseBytes(
-                    lineIndex, start, mTerminalData->GetLineSize(lineIndex));
-            }
-            else {
-                const size_t finish = std::min(
-                    static_cast<size_t>(end.mColumn),
-                    mTerminalData->GetLineSize(lineIndex));
-                mTerminalData->ReplaceBytesWithSpaces(
-                    lineIndex, start, finish);
-            }
-            begin.mColumn = end.mColumn;
+        switch (aArea) {
+        case EraseLine::Area::AfterCursor: {
+            const ByteOffset start = mTerminalData->GetByteOffset(position);
+            mTerminalData->EraseBytes(
+                position.mRow, start.mValue,
+                mTerminalData->GetLineSize(position.mRow));
+            break;
         }
+        case EraseLine::Area::BeforeCursor: {
+            mTerminalData->ReplaceLinePrefixWithSpaces(
+                position.mRow, position.mColumn);
+            break;
+        }
+        case EraseLine::Area::All:
+            mTerminalData->ClearLine(position.mRow);
+            break;
+        }
+    }
+
+    void TerminalState::EraseDisplayAtCursor(EraseDisplay::Area aArea)
+    {
+        const size_t lineCount = mTerminalData->GetLineCount();
+        const size_t viewportTop = GetViewportTopBufferRow(lineCount);
+        if (aArea == EraseDisplay::Area::Scrollback) {
+            if (viewportTop > 0) {
+                mTerminalData->RemoveLine(0, static_cast<int>(viewportTop));
+            }
+            return;
+        }
+
+        const BufferPosition cursor = ToBufferPosition(
+            mCursorPosition, lineCount);
+        const size_t viewportEnd = std::min(
+            lineCount, viewportTop + static_cast<size_t>(mViewportSize.mRows));
+
+        if (aArea == EraseDisplay::Area::All) {
+            for (size_t row = viewportTop; row < viewportEnd; ++row) {
+                mTerminalData->ClearLine(row);
+            }
+            return;
+        }
+
+        if (cursor.mRow >= lineCount) {
+            return;
+        }
+
+        if (aArea == EraseDisplay::Area::AfterCursor) {
+            EraseLineAtCursor(EraseLine::Area::AfterCursor);
+            for (size_t row = cursor.mRow + 1; row < viewportEnd; ++row) {
+                mTerminalData->ClearLine(row);
+            }
+            return;
+        }
+
+        for (size_t row = viewportTop; row < cursor.mRow; ++row) {
+            mTerminalData->ClearLine(row);
+        }
+        EraseLineAtCursor(EraseLine::Area::BeforeCursor);
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const EraseDisplay& aCommand)
+    {
+        EraseDisplayAtCursor(aCommand.mArea);
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const EraseLine& aCommand)
+    {
+        EraseLineAtCursor(aCommand.mArea);
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const SetGraphics& aCommand)
+    {
+        mGraphics.Update(aCommand.mParameters);
+        return CommandResult::Applied;
+    }
+
+    TerminalState::CommandResult TerminalState::ApplyCommand(
+        const RequestStatusReport& aCommand)
+    {
+        std::string output;
+        if (aCommand.mKind == RequestStatusReport::Kind::DeviceStatus) {
+            output = "\x1b[0n";
+        }
+        else {
+            output = "\x1b[" + std::to_string(mCursorPosition.mRow + 1)
+                + ";" + std::to_string(mCursorPosition.mColumn + 1) + "R";
+        }
+        mQueuedTerminalOutput.push(
+            std::vector<uint8_t>(output.begin(), output.end()));
+        return CommandResult::Applied;
     }
 
     std::vector<uint8_t> TerminalState::GetTerminalOutput()
@@ -425,20 +367,15 @@ namespace imterm {
     {
         SanitizeCursorPosition();
         mTerminalData->EnsureLineExists(
-            static_cast<size_t>(mCursorPos.mLine));
+            static_cast<size_t>(mCursorPosition.mRow));
         const size_t lineCount = mTerminalData->GetLineCount();
 
-        size_t lineIndex = 0;
-        if (lineCount - 1 < static_cast<size_t>(mBounds.mLine)) {
-            lineIndex = static_cast<size_t>(mCursorPos.mLine);
-        }
-        else {
-            lineIndex = (lineCount - 1)
-                - static_cast<size_t>(mBounds.mLine - mCursorPos.mLine);
-        }
+        const size_t lineIndex = ToBufferPosition(
+            mCursorPosition, lineCount).mRow;
+        mTerminalData->EnsureLineExists(lineIndex);
 
         mTerminalData->InputGlyph(
-            lineIndex, mCursorPos.mColumn, GetPaletteIndex(), value);
+            lineIndex, mCursorPosition.mColumn, GetPaletteIndex(), value);
         SanitizeCursorPosition();
     }
 
@@ -464,13 +401,9 @@ namespace imterm {
         const auto currentLineIndex = [this]() {
             SanitizeCursorPosition();
             mTerminalData->EnsureLineExists(
-                static_cast<size_t>(mCursorPos.mLine));
+                static_cast<size_t>(mCursorPosition.mRow));
             const size_t lineCount = mTerminalData->GetLineCount();
-            if (lineCount - 1 < static_cast<size_t>(mBounds.mLine)) {
-                return static_cast<size_t>(mCursorPos.mLine);
-            }
-            return (lineCount - 1)
-                - static_cast<size_t>(mBounds.mLine - mCursorPos.mLine);
+            return ToBufferPosition(mCursorPosition, lineCount).mRow;
         };
 
         int totalLines = 0;
@@ -497,31 +430,31 @@ namespace imterm {
             else if (value == '\r')
             {
                 if (mNewLineMode == NewLineMode::AddLfToCr) {
-                    if (mCursorPos.mLine == mBounds.mLine) {
+                    if (mCursorPosition.mRow == mViewportSize.mRows - 1) {
                         // At the bottom (end) of the lines, so we need to add
                         mTerminalData->InsertLine(
                             static_cast<int>(currentLineIndex() + 1));
                     }
                     else {
                         // Only advance the terminal row if we are not at the bottom
-                        ++mCursorPos.mLine;
+                        ++mCursorPosition.mRow;
                     }
                 }
-                mCursorPos.mColumn = 0;
+                mCursorPosition.mColumn = 0;
                 ++offset;
             }
             else if (value == '\n')
             {
-                if (mCursorPos.mLine == mBounds.mLine) {
+                if (mCursorPosition.mRow == mViewportSize.mRows - 1) {
                     // At the bottom (end) of the lines, so we need to add
                     mTerminalData->InsertLine(
                         static_cast<int>(currentLineIndex() + 1));
                 }
                 else {
-                    ++mCursorPos.mLine;
+                    ++mCursorPosition.mRow;
                 }
                 if (mNewLineMode == NewLineMode::AddCrToLf) {
-                    mCursorPos.mColumn = 0;
+                    mCursorPosition.mColumn = 0;
                 }
                 
                 ++totalLines;
@@ -529,8 +462,8 @@ namespace imterm {
             }
             else if (value == '\b')
             {
-                if (mCursorPos.mColumn > 0) {
-                    --mCursorPos.mColumn;
+                if (mCursorPosition.mColumn > 0) {
+                    --mCursorPosition.mColumn;
                 }
                 ++offset;
             }
@@ -547,9 +480,12 @@ namespace imterm {
                 }
 
                 if (characterLength > 1) {
-                    for (size_t index = 0; index < characterLength; ++index) {
-                        InputPrintableByte(bytes[offset + index]);
-                    }
+                    SanitizeCursorPosition();
+                    const size_t lineIndex = currentLineIndex();
+                    mTerminalData->InputBytes(
+                        lineIndex, mCursorPosition.mColumn, GetPaletteIndex(),
+                        bytes.subspan(offset, characterLength));
+                    SanitizeCursorPosition();
                     offset += characterLength;
                 }
                 else {
@@ -578,39 +514,39 @@ namespace imterm {
     {
         using enum TerminalGraphicsState::Flags;
 
-        int icolor = 0;
+        uint32_t icolor = 0;
 
         if (IsInverse()) {
-            icolor = (int)getBackgroundColor();
+            icolor = static_cast<uint32_t>(getBackgroundColor());
         }
         else {
-            icolor = (int)getForegroundColor();
+            icolor = static_cast<uint32_t>(getForegroundColor());
         }
 
         PaletteIndex pal = PaletteIndex::Default;
 
-        if (icolor & (int)BlackFg) {
+        if (icolor & (static_cast<uint32_t>(BlackFg) | static_cast<uint32_t>(BlackBg))) {
             pal = PaletteIndex::Black;
         }
-        else if (icolor & (int)RedFg) {
+        else if (icolor & (static_cast<uint32_t>(RedFg) | static_cast<uint32_t>(RedBg))) {
             pal = PaletteIndex::Red;
         }
-        else if (icolor & (int)GreenFg) {
+        else if (icolor & (static_cast<uint32_t>(GreenFg) | static_cast<uint32_t>(GreenBg))) {
             pal = PaletteIndex::Green;
         }
-        else if (icolor & (int)YellowFg) {
+        else if (icolor & (static_cast<uint32_t>(YellowFg) | static_cast<uint32_t>(YellowBg))) {
             pal = PaletteIndex::Yellow;
         }
-        else if (icolor & (int)BlueFg) {
+        else if (icolor & (static_cast<uint32_t>(BlueFg) | static_cast<uint32_t>(BlueBg))) {
             pal = PaletteIndex::Blue;
         }
-        else if (icolor & (int)MagentaFg) {
+        else if (icolor & (static_cast<uint32_t>(MagentaFg) | static_cast<uint32_t>(MagentaBg))) {
             pal = PaletteIndex::Magenta;
         }
-        else if (icolor & (int)CyanFg) {
+        else if (icolor & (static_cast<uint32_t>(CyanFg) | static_cast<uint32_t>(CyanBg))) {
             pal = PaletteIndex::Cyan;
         }
-        else if (icolor & (int)WhiteFg) {
+        else if (icolor & (static_cast<uint32_t>(WhiteFg) | static_cast<uint32_t>(WhiteBg))) {
             pal = PaletteIndex::White;
         }
 

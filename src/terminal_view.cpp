@@ -698,9 +698,13 @@ void TerminalView::Render()
 	thisRenderGeometry.mWindowSize = ImGui::GetWindowSize();
 	thisRenderGeometry.mContentRegionAvail = ImGui::GetContentRegionAvail();
 
-	int termRowMaxI = std::max((int)ceil(thisRenderGeometry.mContentRegionAvail.y / mCharAdvance.y) - 1, 0);
-	int termColMaxI = std::max((int)ceil((thisRenderGeometry.mContentRegionAvail.x - thisRenderGeometry.mTextScreenPos.x) / mCharAdvance.x) - 1, 0);
-	mTermState->SetBounds(Coordinates(termRowMaxI, termColMaxI));
+	const int terminalRows = std::max(
+		static_cast<int>(ceil(
+			thisRenderGeometry.mContentRegionAvail.y / mCharAdvance.y)), 1);
+	const int terminalColumns = std::max(
+		static_cast<int>(ceil(
+			thisRenderGeometry.mContentRegionAvail.x / mCharAdvance.x)), 1);
+	mTermState->SetViewportSize(terminalRows, terminalColumns);
 
 	// Deduce mTextStart by evaluating mLines size (global lineMax) plus two spaces as text width
 	static const int margin_work_buf_length = 48;

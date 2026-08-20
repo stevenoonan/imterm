@@ -18,6 +18,7 @@ void EscapeSequenceParser::ResetForNextByte()
 	mDataStaged.clear();
 	mDataElementInProcess = 0;
 	mDataElementDigits = 0;
+	mSawDataSeparator = false;
 	mSequenceLength = 0;
 	mError = Error::NotReady;
 	mParseResult = {};
@@ -101,11 +102,12 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 			++mDataElementDigits;
 		}
 		else if (input == ';') {
-			StageDataElement();
+			mSawDataSeparator = true;
+			StageDataElement(true);
 		}
 		else {
 			if ((input >= 'A' && input <= 'Z') || (input >= 'a' && input <= 'z')) {
-				if (!StageDataElement()) {
+				if (!StageDataElement(true)) {
 					break;
 				}
 				mIdentifier = static_cast<EscapeIdentifier>(input);
@@ -132,9 +134,9 @@ const EscapeSequenceParser::ParseResult& EscapeSequenceParser::Parse(uint8_t inp
 	return mParseResult;
 }
 
-bool EscapeSequenceParser::StageDataElement()
+bool EscapeSequenceParser::StageDataElement(bool aIsFinalElement)
 {
-	if (mDataElementDigits == 0) {
+	if (mDataElementDigits == 0 && (!aIsFinalElement || !mSawDataSeparator)) {
 		return true;
 	}
 
@@ -143,7 +145,8 @@ bool EscapeSequenceParser::StageDataElement()
 		return false;
 	}
 
-	mDataStaged.push_back(mDataElementInProcess);
+	mDataStaged.push_back(
+		mDataElementDigits == 0 ? 0 : mDataElementInProcess);
 	mDataElementInProcess = 0;
 	mDataElementDigits = 0;
 	return true;
@@ -155,7 +158,6 @@ void EscapeSequenceParser::Fail(Error error)
 	mError = error;
 	mParseResult.mOutputChar = 0;
 	mParseResult.mIdentifier = EscapeIdentifier::Undefined;
-	mParseResult.mCommand = CommandType::None;
 	mParseResult.mMode = Mode::None;
 	mParseResult.mCommandData.clear();
 	mParseResult.mStage = mStage;

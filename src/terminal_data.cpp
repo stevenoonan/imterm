@@ -210,6 +210,82 @@ namespace imterm {
 		Touch(line);
 	}
 
+	void TerminalData::ClearLine(size_t aLineIndex)
+	{
+		EraseBytes(aLineIndex, 0, GetLineSize(aLineIndex));
+	}
+
+	void TerminalData::ReplaceLinePrefixWithSpaces(
+		size_t aLineIndex, RenderedColumn aThroughColumn)
+	{
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
+		}
+		Line& line = mLines.at(aLineIndex);
+		const BufferPosition position{aLineIndex, aThroughColumn};
+		const size_t byteEnd = GetByteOffsetAfter(position).mValue;
+		const int originalEndColumn = GetCharacterColumn(
+			static_cast<int>(aLineIndex), static_cast<int>(byteEnd));
+		const size_t blankColumns = static_cast<size_t>(std::max(
+			aThroughColumn.mValue + 1, originalEndColumn));
+
+		line.mGlyphs.erase(
+			line.mGlyphs.begin(),
+			line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(byteEnd));
+		line.mGlyphs.insert(
+			line.mGlyphs.begin(), blankColumns,
+			Glyph(' ', PaletteIndex::Default));
+		if (!mPendingLog) {
+			ResetPendingLog(aLineIndex);
+		}
+		Touch(line);
+	}
+
+	ByteOffset TerminalData::GetByteOffset(
+		const BufferPosition& aPosition) const
+	{
+		const Line& line = mLines.at(aPosition.mRow);
+		const int targetColumn = std::max(aPosition.mColumn.mValue, 0);
+		int renderedColumn = 0;
+		for (size_t index = 0; index < line.size();) {
+			const Char character = line[index].mChar;
+			const size_t characterLength = static_cast<size_t>(UTF8CharLength(
+				character, line.size() - index));
+			const int nextColumn = character == '\t'
+				? (renderedColumn / mTabSize) * mTabSize + mTabSize
+				: renderedColumn + 1;
+			if (targetColumn < nextColumn) {
+				return ByteOffset{index};
+			}
+			index += characterLength;
+			renderedColumn = nextColumn;
+		}
+		return ByteOffset{line.size()};
+	}
+
+	ByteOffset TerminalData::GetByteOffsetAfter(
+		const BufferPosition& aPosition) const
+	{
+		const Line& line = mLines.at(aPosition.mRow);
+		const int targetColumn = std::max(aPosition.mColumn.mValue, 0);
+		int renderedColumn = 0;
+		for (size_t index = 0; index < line.size();) {
+			const Char character = line[index].mChar;
+			const size_t characterLength = static_cast<size_t>(UTF8CharLength(
+				character, line.size() - index));
+			const int nextColumn = character == '\t'
+				? (renderedColumn / mTabSize) * mTabSize + mTabSize
+				: renderedColumn + 1;
+			if (targetColumn < nextColumn) {
+				return ByteOffset{index + characterLength};
+			}
+			index += characterLength;
+			renderedColumn = nextColumn;
+		}
+		return ByteOffset{line.size()};
+	}
+
 	void TerminalData::DeleteRange(
 		const Coordinates& aStart, const Coordinates& aEnd)
 	{
@@ -442,23 +518,38 @@ namespace imterm {
 		size_t aLineIndex, int& aColumnIndex,
 		PaletteIndex aPaletteIndex, uint8_t aValue)
 	{
+		InputBytes(aLineIndex, aColumnIndex, aPaletteIndex,
+			std::span<const uint8_t>(&aValue, 1));
+	}
+
+	void TerminalData::InputBytes(
+		size_t aLineIndex, int& aColumnIndex,
+		PaletteIndex aPaletteIndex, std::span<const uint8_t> aBytes)
+	{
 		assert(!mReadOnly);
-		if (mReadOnly) {
+		if (mReadOnly || aBytes.empty()) {
 			return;
 		}
 		Line& line = mLines.at(aLineIndex);
 		aColumnIndex = std::max(aColumnIndex, 0);
-		const size_t column = static_cast<size_t>(aColumnIndex);
-
-		while (line.mGlyphs.size() < column) {
+		while (GetLineMaxColumn(static_cast<int>(aLineIndex)) < aColumnIndex) {
 			line.mGlyphs.emplace_back(' ', PaletteIndex::Default);
 		}
-		if (line.mGlyphs.size() == column) {
-			line.mGlyphs.emplace_back(aValue, aPaletteIndex);
+
+		const BufferPosition position{
+			aLineIndex, RenderedColumn{aColumnIndex}};
+		const size_t start = GetByteOffset(position).mValue;
+		const size_t finish = GetByteOffsetAfter(position).mValue;
+		if (start < line.mGlyphs.size()) {
+			line.mGlyphs.erase(
+				line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(start),
+				line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(finish));
 		}
-		else {
-			line.mGlyphs[column].mChar = aValue;
-			line.mGlyphs[column].mColorIndex = aPaletteIndex;
+		line.mGlyphs.insert(
+			line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(start),
+			aBytes.size(), Glyph(0, aPaletteIndex));
+		for (size_t index = 0; index < aBytes.size(); ++index) {
+			line.mGlyphs[start + index].mChar = aBytes[index];
 		}
 		if (!mPendingLog) {
 			ResetPendingLog(aLineIndex);

@@ -138,6 +138,9 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/escape_sequence_parser.h
 	${SRC_DIR}/terminal_data.cpp
 	${SRC_DIR}/terminal_data.h
+	${SRC_DIR}/terminal_command.cpp
+	${SRC_DIR}/terminal_command.h
+	${SRC_DIR}/terminal_coordinates.h
 	${SRC_DIR}/terminal_state.cpp
 	${SRC_DIR}/terminal_state.h
 	${SRC_DIR}/terminal_logger.cpp
@@ -193,6 +196,7 @@ if(BUILD_TESTING)
 	add_executable(imterm_tests
 		tests/escape_sequence_parser_test.cpp
 		tests/terminal_data_test.cpp
+		tests/terminal_command_test.cpp
 		tests/terminal_input_test.cpp
 		tests/terminal_logger_test.cpp
 		tests/terminal_state_test.cpp
