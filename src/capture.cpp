@@ -257,6 +257,10 @@ namespace imterm {
             if (ImGui::MenuItem(auto_scroll?autoScrollOn:autoScrollOff)) {
                 auto_scroll = !auto_scroll;
             }
+
+            if (ImGui::MenuItem("Clear", nullptr, false, term_view != nullptr)) {
+                term_view->ClearContents();
+            }
             
             if (ImGui::BeginMenu("Options")) {
 

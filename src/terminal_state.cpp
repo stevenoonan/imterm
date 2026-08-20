@@ -133,6 +133,13 @@ namespace imterm {
             aCommand);
     }
 
+    void TerminalState::ClearContents()
+    {
+        mTerminalData->SetText("");
+        mCursorPosition = {};
+        mSavedCursorPosition = {};
+    }
+
     void TerminalState::SetViewportSize(int aRows, int aColumns)
     {
         const int previousRows = mViewportSize.mRows;

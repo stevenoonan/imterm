@@ -34,6 +34,22 @@ TEST_F(TerminalStateTest, AppendsOrdinaryText)
     EXPECT_EQ(state->getPosition(), Coordinates(0, 5));
 }
 
+TEST_F(TerminalStateTest, ClearContentsEmptiesTheBufferAndHomesTheCursor)
+{
+    state->Input(imterm::test::Bytes("first\nsecond"));
+    state->Input(imterm::test::Bytes("\x1B[s"));
+
+    state->ClearContents();
+
+    ASSERT_EQ(data->GetLineCount(), 1U);
+    EXPECT_TRUE(data->GetLine(0).empty());
+    EXPECT_EQ(state->getPosition(), Coordinates(0, 0));
+
+    state->Input(imterm::test::Bytes("\x1B[uX"));
+    EXPECT_EQ(data->GetTextLines(), std::vector<std::string>({"X"}));
+    EXPECT_EQ(state->getPosition(), Coordinates(0, 1));
+}
+
 TEST_F(TerminalStateTest, StrictNewlinePreservesTheColumn)
 {
     state->Input(imterm::test::Bytes("A\nB"));

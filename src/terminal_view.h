@@ -115,6 +115,7 @@ namespace imterm {
 
 		Coordinates GetCursorPosition() const { return GetActualCursorCoordinates(); }
 		void SetCursorPosition(const Coordinates& aPosition);
+		void ClearContents();
 
 		inline void SetHandleMouseInputs(bool aValue) { mHandleMouseInputs = aValue; }
 		inline bool IsHandleMouseInputsEnabled() const { return mHandleKeyboardInputs; }

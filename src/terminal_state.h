@@ -102,6 +102,7 @@ namespace imterm {
 
 		CommandResult Update(const EscapeSequenceParser::ParseResult& aParseResult);
 		CommandResult Apply(const TerminalCommand& aCommand);
+		void ClearContents();
 		void SetViewportSize(int aRows, int aColumns);
 
 		int Input(std::span<const uint8_t> aBytes);

@@ -1000,6 +1000,16 @@ void TerminalView::SetCursorPosition(const Coordinates & aPosition)
 	}
 }
 
+void TerminalView::ClearContents()
+{
+	mTermState->ClearContents();
+	mUiState = {};
+	mInteractiveStart = {};
+	mInteractiveEnd = {};
+	mCursorPositionChanged = true;
+	mScrollToTop = true;
+}
+
 void TerminalView::SetSelectionStart(const Coordinates & aPosition)
 {
 	mUiState.mSelectionStart = SanitizeCoordinates(aPosition);

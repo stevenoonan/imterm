@@ -41,7 +41,7 @@ half-conversion.
 - [X] Milestone 0: Establish the safety net
 - [X] Milestone 1: Harden the existing input pipeline
 - [X] Milestone 2: Encapsulate the terminal buffer and logging invariants
-- [ ] Milestone 3: Correct and isolate terminal protocol semantics
+- [X] Milestone 3: Correct and isolate terminal protocol semantics
 - [ ] Milestone 4: Define a consistent text-encoding boundary
 - [ ] Milestone 5: Introduce an owned capture session
 - [ ] Milestone 6: Make configuration typed, validated, and reliable
