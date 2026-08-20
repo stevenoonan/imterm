@@ -316,7 +316,7 @@ namespace imterm {
         int lineDelta = aBounds.mLine - mBounds.mLine;
         mBounds = aBounds;
         if (lineDelta > 0) {
-            const int lastLine = static_cast<int>(mTerminalData->mLines.size() - 1);
+            const int lastLine = static_cast<int>(mTerminalData->GetLineCount() - 1);
             if (lineDelta > lastLine - mCursorPos.mLine) {
                 mCursorPos.mLine = lastLine;
             }
@@ -365,39 +365,39 @@ namespace imterm {
         end.mLine = std::clamp(end.mLine, 0, mBounds.mLine);
         end.mColumn = std::clamp(end.mColumn, 0, mBounds.mColumn);
 
-        begin = getPositionRelative(mTerminalData->mLines.size(), begin);
-        end = getPositionRelative(mTerminalData->mLines.size(), end);
+        begin = getPositionRelative(mTerminalData->GetLineCount(), begin);
+        end = getPositionRelative(mTerminalData->GetLineCount(), end);
         if (end < begin) {
             return;
         }
 
         const size_t lastRequiredLine = static_cast<size_t>(end.mLine);
-        while (mTerminalData->mLines.size() <= lastRequiredLine) {
-            mTerminalData->InsertLine(
-                static_cast<int>(mTerminalData->mLines.size()));
-        }
+        mTerminalData->EnsureLineExists(lastRequiredLine);
 
         while (begin < end) {
-            Line& line = mTerminalData->mLines[static_cast<size_t>(begin.mLine)];
+            const size_t lineIndex = static_cast<size_t>(begin.mLine);
             const size_t start = std::min(
-                static_cast<size_t>(begin.mColumn), line.size());
+                static_cast<size_t>(begin.mColumn),
+                mTerminalData->GetLineSize(lineIndex));
 
             if (begin.mLine < end.mLine) {
-                line.erase(line.begin() + static_cast<std::ptrdiff_t>(start), line.end());
+                mTerminalData->EraseBytes(
+                    lineIndex, start, mTerminalData->GetLineSize(lineIndex));
                 ++begin.mLine;
                 begin.mColumn = 0;
                 continue;
             }
 
             if (end.mColumn == mBounds.mColumn) {
-                line.erase(line.begin() + static_cast<std::ptrdiff_t>(start), line.end());
+                mTerminalData->EraseBytes(
+                    lineIndex, start, mTerminalData->GetLineSize(lineIndex));
             }
             else {
                 const size_t finish = std::min(
-                    static_cast<size_t>(end.mColumn), line.size());
-                for (size_t index = start; index < finish; ++index) {
-                    line[index].mChar = ' ';
-                }
+                    static_cast<size_t>(end.mColumn),
+                    mTerminalData->GetLineSize(lineIndex));
+                mTerminalData->ReplaceBytesWithSpaces(
+                    lineIndex, start, finish);
             }
             begin.mColumn = end.mColumn;
         }
@@ -424,26 +424,21 @@ namespace imterm {
     void TerminalState::InputPrintableByte(uint8_t value)
     {
         SanitizeCursorPosition();
-        Lines& lines = mTerminalData->mLines;
-        if (lines.empty()) {
-            lines.emplace_back();
-        }
-
-        while (static_cast<size_t>(mCursorPos.mLine) >= lines.size()) {
-            mTerminalData->InsertLine(static_cast<int>(lines.size()));
-        }
+        mTerminalData->EnsureLineExists(
+            static_cast<size_t>(mCursorPos.mLine));
+        const size_t lineCount = mTerminalData->GetLineCount();
 
         size_t lineIndex = 0;
-        if (lines.size() - 1 < static_cast<size_t>(mBounds.mLine)) {
+        if (lineCount - 1 < static_cast<size_t>(mBounds.mLine)) {
             lineIndex = static_cast<size_t>(mCursorPos.mLine);
         }
         else {
-            lineIndex = (lines.size() - 1)
+            lineIndex = (lineCount - 1)
                 - static_cast<size_t>(mBounds.mLine - mCursorPos.mLine);
         }
 
         mTerminalData->InputGlyph(
-            lines[lineIndex], mCursorPos.mColumn, GetPaletteIndex(), value);
+            lineIndex, mCursorPos.mColumn, GetPaletteIndex(), value);
         SanitizeCursorPosition();
     }
 
@@ -466,20 +461,15 @@ namespace imterm {
             bytes = joinedInput;
         }
 
-        Lines& lines = mTerminalData->mLines;
-        if (lines.empty()) {
-            lines.emplace_back();
-        }
-
-        const auto currentLineIndex = [this, &lines]() {
+        const auto currentLineIndex = [this]() {
             SanitizeCursorPosition();
-            while (static_cast<size_t>(mCursorPos.mLine) >= lines.size()) {
-                mTerminalData->InsertLine(static_cast<int>(lines.size()));
-            }
-            if (lines.size() - 1 < static_cast<size_t>(mBounds.mLine)) {
+            mTerminalData->EnsureLineExists(
+                static_cast<size_t>(mCursorPos.mLine));
+            const size_t lineCount = mTerminalData->GetLineCount();
+            if (lineCount - 1 < static_cast<size_t>(mBounds.mLine)) {
                 return static_cast<size_t>(mCursorPos.mLine);
             }
-            return (lines.size() - 1)
+            return (lineCount - 1)
                 - static_cast<size_t>(mBounds.mLine - mCursorPos.mLine);
         };
 

@@ -29,8 +29,8 @@ TEST_F(TerminalStateTest, AppendsOrdinaryText)
 {
     EXPECT_EQ(state->Input(imterm::test::Bytes("hello")), 0);
 
-    ASSERT_EQ(data->mLines.size(), 1U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "hello");
+    ASSERT_EQ(data->GetLineCount(), 1U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "hello");
     EXPECT_EQ(state->getPosition(), Coordinates(0, 5));
 }
 
@@ -38,9 +38,9 @@ TEST_F(TerminalStateTest, StrictNewlinePreservesTheColumn)
 {
     state->Input(imterm::test::Bytes("A\nB"));
 
-    ASSERT_EQ(data->mLines.size(), 2U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "A");
-    EXPECT_EQ(imterm::test::LineText(data->mLines[1]), " B");
+    ASSERT_EQ(data->GetLineCount(), 2U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "A");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(1)), " B");
 }
 
 TEST_F(TerminalStateTest, AddCrToLfResetsTheColumn)
@@ -49,9 +49,9 @@ TEST_F(TerminalStateTest, AddCrToLfResetsTheColumn)
 
     state->Input(imterm::test::Bytes("A\nB"));
 
-    ASSERT_EQ(data->mLines.size(), 2U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "A");
-    EXPECT_EQ(imterm::test::LineText(data->mLines[1]), "B");
+    ASSERT_EQ(data->GetLineCount(), 2U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "A");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(1)), "B");
 }
 
 TEST_F(TerminalStateTest, AddLfToCrAdvancesToANewLine)
@@ -60,9 +60,9 @@ TEST_F(TerminalStateTest, AddLfToCrAdvancesToANewLine)
 
     state->Input(imterm::test::Bytes("A\rB"));
 
-    ASSERT_EQ(data->mLines.size(), 2U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "A");
-    EXPECT_EQ(imterm::test::LineText(data->mLines[1]), "B");
+    ASSERT_EQ(data->GetLineCount(), 2U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "A");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(1)), "B");
 }
 
 TEST_F(TerminalStateTest, RetainsEscapeParserStateAcrossInputChunks)
@@ -70,9 +70,9 @@ TEST_F(TerminalStateTest, RetainsEscapeParserStateAcrossInputChunks)
     state->Input(imterm::test::Bytes("\x1B[3"));
     state->Input(imterm::test::Bytes("1mR"));
 
-    ASSERT_EQ(data->mLines[0].size(), 1U);
-    EXPECT_EQ(data->mLines[0][0].mChar, 'R');
-    EXPECT_EQ(data->mLines[0][0].mColorIndex, imterm::PaletteIndex::Red);
+    ASSERT_EQ(data->GetLine(0).size(), 1U);
+    EXPECT_EQ(data->GetLine(0)[0].mChar, 'R');
+    EXPECT_EQ(data->GetLine(0)[0].mColorIndex, imterm::PaletteIndex::Red);
 }
 
 TEST_F(TerminalStateTest, QueuesDeviceStatusResponse)
@@ -88,8 +88,8 @@ TEST_F(TerminalStateTest, MovesCursorAndPadsBeforeWriting)
 {
     state->Input(imterm::test::Bytes("\x1B[3CX"));
 
-    ASSERT_EQ(data->mLines[0].size(), 4U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "   X");
+    ASSERT_EQ(data->GetLine(0).size(), 4U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "   X");
     EXPECT_EQ(state->getPosition(), Coordinates(0, 4));
 }
 
@@ -97,8 +97,8 @@ TEST_F(TerminalStateTest, ErasesLineAfterCursor)
 {
     state->Input(imterm::test::Bytes("abc\x1B[2D\x1B[K"));
 
-    ASSERT_EQ(data->mLines.size(), 1U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "a");
+    ASSERT_EQ(data->GetLineCount(), 1U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "a");
     EXPECT_EQ(state->getPosition(), Coordinates(0, 1));
 }
 
@@ -109,11 +109,11 @@ TEST_F(TerminalStateTest, PreservesScrollbackWhenTheViewportFills)
 
     EXPECT_EQ(state->Input(imterm::test::Bytes("0\n1\n2")), 2);
 
-    ASSERT_EQ(data->mLines.size(), 3U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines[0]), "0");
-    EXPECT_EQ(imterm::test::LineText(data->mLines[1]), "1");
-    EXPECT_EQ(imterm::test::LineText(data->mLines[2]), "2");
-    EXPECT_EQ(state->getPositionRelative(data->mLines.size()), Coordinates(2, 1));
+    ASSERT_EQ(data->GetLineCount(), 3U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "0");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(1)), "1");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(2)), "2");
+    EXPECT_EQ(state->getPositionRelative(data->GetLineCount()), Coordinates(2, 1));
 }
 
 TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
@@ -134,10 +134,10 @@ TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
             state->SetBounds(Coordinates(2, 79));
 
             state->Input(std::span(sequence).first(split));
-            EXPECT_TRUE(data->mLines.front().empty()) << "split=" << split;
+            EXPECT_TRUE(data->GetLine(0).empty()) << "split=" << split;
 
             state->Input(std::span(sequence).subspan(split));
-            EXPECT_EQ(imterm::test::LineText(data->mLines.front()),
+            EXPECT_EQ(imterm::test::LineText(data->GetLine(0)),
                 std::string(sequence.begin(), sequence.end())) << "split=" << split;
         }
     }
@@ -148,9 +148,9 @@ TEST_F(TerminalStateTest, IgnoresUnknownSgrAndCsiCommands)
     EXPECT_NO_THROW(state->Input(imterm::test::Bytes(
         "\x1B[999mA\x1B[12zB\x1B[31mR")));
 
-    ASSERT_EQ(data->mLines.front().size(), 3U);
-    EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "ABR");
-    EXPECT_EQ(data->mLines.front().back().mColorIndex, imterm::PaletteIndex::Red);
+    ASSERT_EQ(data->GetLine(0).size(), 3U);
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "ABR");
+    EXPECT_EQ(data->GetLine(0).back().mColorIndex, imterm::PaletteIndex::Red);
 }
 
 TEST_F(TerminalStateTest, ClampsLargeCursorMovementsInEveryDirection)
@@ -182,7 +182,7 @@ TEST_F(TerminalStateTest, MalformedSequenceRecoversAtEveryChunkBoundary)
         state->Input(std::span(malformed).first(split));
         state->Input(std::span(malformed).subspan(split));
 
-        EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "AB")
+        EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "AB")
             << "split=" << split;
     }
 }
@@ -191,14 +191,14 @@ TEST_F(TerminalStateTest, EmbeddedNulDoesNotTerminateOrHideFollowingBytes)
 {
     state->Input(imterm::test::Bytes({'A', 0, 'B'}));
 
-    EXPECT_EQ(imterm::test::LineText(data->mLines.front()), "AB");
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)), "AB");
 }
 
 TEST_F(TerminalStateTest, OversizedCsiArgumentRecoversForFollowingText)
 {
     state->Input(imterm::test::Bytes("A\x1B[999999999mZ"));
 
-    const std::string text = imterm::test::LineText(data->mLines.front());
+    const std::string text = imterm::test::LineText(data->GetLine(0));
     EXPECT_EQ(text.front(), 'A');
     EXPECT_EQ(text.back(), 'Z');
 }
@@ -207,7 +207,7 @@ TEST_F(TerminalStateTest, ErasingBeyondAShortLineUsesValidatedIterators)
 {
     state->Input(imterm::test::Bytes("x\x1B[10C\x1B[1KZ"));
 
-    EXPECT_EQ(imterm::test::LineText(data->mLines.front()),
+    EXPECT_EQ(imterm::test::LineText(data->GetLine(0)),
         "           Z");
 }
 
@@ -227,7 +227,7 @@ TEST_F(TerminalStateTest, DeterministicRandomInputDoesNotCrashOrGrowWithoutBound
     }
 
     EXPECT_NO_THROW(state->Input(bytes));
-    EXPECT_LE(data->mLines.size(), newlineCount + 5);
+    EXPECT_LE(data->GetLineCount(), newlineCount + 5);
 }
 
 } // namespace

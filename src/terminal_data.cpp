@@ -1,31 +1,46 @@
 #include "terminal_data.h"
 
+#include <cassert>
+#include <iostream>
+#include <stdexcept>
+
 namespace imterm {
 
-	TerminalData::TerminalData() : mReadOnly(false), mTextChanged(false), mTabSize(4) {
-
+	TerminalData::TerminalData()
+		: mReadOnly(false), mTextChanged(false), mTabSize(4)
+	{
 	}
 
-	TerminalData::TerminalData(std::shared_ptr<TerminalLogger> aLogger) : mReadOnly(false), mTextChanged(false), mTabSize(4), mLogger(aLogger) {
-
+	TerminalData::TerminalData(std::shared_ptr<TerminalLogger> aLogger)
+		: mReadOnly(false), mTextChanged(false), mTabSize(4),
+		  mLogger(std::move(aLogger))
+	{
 		if (mLogger) {
-			mLogger->RegisterLogClosingWatcher([this] {
-				LogUnloggedLine(true);
-				});
+			mLoggerWatcherToken = mLogger->RegisterLogClosingWatcher([this] {
+				LogPendingLine(true);
+			});
+		}
+	}
+
+	TerminalData::~TerminalData()
+	{
+		if (!mLogger) {
+			return;
 		}
 
-	}
+		try {
+			LogPendingLine(true);
+		}
+		catch (const std::exception& error) {
+			std::cerr << "TerminalData final log flush failed: "
+				<< error.what() << '\n';
+		}
+		catch (...) {
+			std::cerr << "TerminalData final log flush failed\n";
+		}
 
-	TerminalData::~TerminalData() {
-
-		if (mLogger) {
-			bool removed = mLogger->DeregisterLogClosingWatcher([this] {
-				LogUnloggedLine(true);
-				});
-
-			assert(removed);
-
-			if (!removed) std::cerr << "~TerminalData: DeregisterLogClosingWatcher() failed" << std::endl;
+		if (mLoggerWatcherToken) {
+			mLogger->DeregisterLogClosingWatcher(*mLoggerWatcherToken);
 		}
 	}
 
@@ -34,151 +49,275 @@ namespace imterm {
 		mReadOnly = aValue;
 	}
 
+	void TerminalData::Touch(Line& aLine) noexcept
+	{
+		aLine.Touch();
+		mTextChanged = true;
+	}
+
+	void TerminalData::ResetPendingLog(size_t aLineIndex)
+	{
+		assert(!mLines.empty());
+		aLineIndex = std::min(aLineIndex, mLines.size() - 1);
+		mPendingLog = PendingLog{
+			aLineIndex, static_cast<int>(aLineIndex + 1)};
+	}
+
+	void TerminalData::AdjustPendingLogForRemoval(size_t aStart, size_t aEnd)
+	{
+		if (!mPendingLog) {
+			return;
+		}
+
+		if (mPendingLog->mLineIndex >= aEnd) {
+			mPendingLog->mLineIndex -= aEnd - aStart;
+		}
+		else if (mPendingLog->mLineIndex >= aStart) {
+			mPendingLog.reset();
+		}
+	}
+
 	void TerminalData::RemoveLine(int aStart, int aEnd)
 	{
 		assert(!mReadOnly);
-		assert(aEnd >= aStart);
-		assert(mLines.size() > (size_t)(aEnd - aStart));
+		if (mReadOnly) {
+			return;
+		}
+		if (aStart < 0 || aEnd < aStart
+			|| static_cast<size_t>(aEnd) > mLines.size()) {
+			throw std::out_of_range("TerminalData::RemoveLine range");
+		}
 
-		mLines.erase(mLines.begin() + aStart, mLines.begin() + aEnd);
-		assert(!mLines.empty());
+		const size_t start = static_cast<size_t>(aStart);
+		const size_t end = static_cast<size_t>(aEnd);
+		if (start == end) {
+			return;
+		}
+		if (end - start >= mLines.size()) {
+			throw std::invalid_argument(
+				"TerminalData cannot remove every line");
+		}
 
+		AdjustPendingLogForRemoval(start, end);
+		mLines.erase(
+			mLines.begin() + static_cast<std::ptrdiff_t>(start),
+			mLines.begin() + static_cast<std::ptrdiff_t>(end));
 		mTextChanged = true;
 	}
 
 	void TerminalData::RemoveLine(int aIndex)
 	{
+		RemoveLine(aIndex, aIndex + 1);
+	}
+
+	void TerminalData::InsertLine(int aIndex)
+	{
 		assert(!mReadOnly);
-		assert(mLines.size() > 1);
+		if (mReadOnly) {
+			return;
+		}
+		if (aIndex < 0 || static_cast<size_t>(aIndex) > mLines.size()) {
+			throw std::out_of_range("TerminalData::InsertLine index");
+		}
 
-		mLines.erase(mLines.begin() + aIndex);
-		assert(!mLines.empty());
-
+		LogPendingLine();
+		const size_t index = static_cast<size_t>(aIndex);
+		mLines.insert(
+			mLines.begin() + static_cast<std::ptrdiff_t>(index), Line());
+		ResetPendingLog(index);
 		mTextChanged = true;
 	}
 
-	Line& TerminalData::InsertLine(int aIndex)
+	void TerminalData::EnsureLineExists(size_t aIndex)
 	{
-		assert(!mReadOnly);
-		
-		LogUnloggedLine();
-
-		auto& result = *mLines.insert(mLines.begin() + aIndex, Line());
-
-		mUnloggedLine = &mLines[aIndex];
-		mUnloggedLineNumber = aIndex + 1;
-
-		return result;
-	}
-
-	void TerminalData::LogUnloggedLine(bool aLoggerIsClosing) {
-		if (mUnloggedLine) {
-
-			if (aLoggerIsClosing && (mUnloggedLine->size() == 0) && (mUnloggedLineNumber == 1)) {
-				// The logger is being closed, and the unlogged line is the first line which has no data.
-				// If we log this empty data we will create an empty file for no reason. So just return.
-				return;
-			}
-			
-			// First invalidate mUnloggedLine before calling mLogger->Log() because it can cause this function be
-			// called again
-			auto unlogged = mUnloggedLine;
-			auto lineNumber = mUnloggedLineNumber;
-			
-			mUnloggedLine = nullptr;
-			mUnloggedLineNumber = 0;
-
-			if (mLogger) {
-				mLogger->Log(*unlogged, lineNumber);
-			}
-			
+		while (mLines.size() <= aIndex) {
+			InsertLine(static_cast<int>(mLines.size()));
 		}
 	}
 
-	void TerminalData::DeleteRange(const Coordinates& aStart, const Coordinates& aEnd)
+	void TerminalData::LogPendingLine(bool aLoggerIsClosing)
+	{
+		if (!mPendingLog) {
+			return;
+		}
+
+		const PendingLog pending = *mPendingLog;
+		if (pending.mLineIndex >= mLines.size()) {
+			mPendingLog.reset();
+			return;
+		}
+
+		const Line& line = mLines[pending.mLineIndex];
+		if (aLoggerIsClosing && line.empty() && pending.mLineNumber == 1) {
+			return;
+		}
+
+		mPendingLog.reset();
+		if (mLogger) {
+			try {
+				mLogger->Log(line, pending.mLineNumber);
+			}
+			catch (...) {
+				mPendingLog = pending;
+				throw;
+			}
+		}
+	}
+
+	void TerminalData::EraseBytes(
+		size_t aLineIndex, size_t aStart, size_t aEnd)
+	{
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
+		}
+		Line& line = mLines.at(aLineIndex);
+		const size_t start = std::min(aStart, line.mGlyphs.size());
+		const size_t end = std::min(std::max(aEnd, start), line.mGlyphs.size());
+		if (start == end) {
+			return;
+		}
+
+		line.mGlyphs.erase(
+			line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(start),
+			line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(end));
+		if (!mPendingLog) {
+			ResetPendingLog(aLineIndex);
+		}
+		Touch(line);
+	}
+
+	void TerminalData::ReplaceBytesWithSpaces(
+		size_t aLineIndex, size_t aStart, size_t aEnd)
+	{
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
+		}
+		Line& line = mLines.at(aLineIndex);
+		const size_t start = std::min(aStart, line.mGlyphs.size());
+		const size_t end = std::min(std::max(aEnd, start), line.mGlyphs.size());
+		if (start == end) {
+			return;
+		}
+
+		for (size_t index = start; index < end; ++index) {
+			line.mGlyphs[index].mChar = ' ';
+		}
+		if (!mPendingLog) {
+			ResetPendingLog(aLineIndex);
+		}
+		Touch(line);
+	}
+
+	void TerminalData::DeleteRange(
+		const Coordinates& aStart, const Coordinates& aEnd)
 	{
 		assert(aEnd >= aStart);
 		assert(!mReadOnly);
-
-		//printf("D(%d.%d)-(%d.%d)\n", aStart.mLine, aStart.mColumn, aEnd.mLine, aEnd.mColumn);
-
-		if (aEnd == aStart)
+		if (mReadOnly || aEnd < aStart || aStart.mLine < 0
+			|| aEnd.mLine < 0
+			|| static_cast<size_t>(aStart.mLine) >= mLines.size()
+			|| static_cast<size_t>(aEnd.mLine) >= mLines.size()) {
 			return;
-
-		auto start = GetCharacterIndex(aStart);
-		auto end = GetCharacterIndex(aEnd);
-
-		if (aStart.mLine == aEnd.mLine)
-		{
-			auto& line = mLines[aStart.mLine];
-			auto n = GetLineMaxColumn(aStart.mLine);
-			if (aEnd.mColumn >= n)
-				line.erase(line.begin() + start, line.end());
-			else
-				line.erase(line.begin() + start, line.begin() + end);
 		}
-		else
-		{
-			auto& firstLine = mLines[aStart.mLine];
-			auto& lastLine = mLines[aEnd.mLine];
-
-			firstLine.erase(firstLine.begin() + start, firstLine.end());
-			lastLine.erase(lastLine.begin(), lastLine.begin() + end);
-
-			if (aStart.mLine < aEnd.mLine)
-				firstLine.insert(firstLine.end(), lastLine.begin(), lastLine.end());
-
-			if (aStart.mLine < aEnd.mLine)
-				RemoveLine(aStart.mLine + 1, aEnd.mLine + 1);
+		if (aEnd == aStart) {
+			return;
 		}
 
-		mTextChanged = true;
+		const int startIndex = GetCharacterIndex(aStart);
+		const int endIndex = GetCharacterIndex(aEnd);
+		if (startIndex < 0 || endIndex < 0) {
+			return;
+		}
+
+		const size_t startLineIndex = static_cast<size_t>(aStart.mLine);
+		const size_t endLineIndex = static_cast<size_t>(aEnd.mLine);
+		if (startLineIndex == endLineIndex) {
+			const Line& line = mLines[startLineIndex];
+			const size_t start = std::min(
+				static_cast<size_t>(startIndex), line.size());
+			const size_t end = aEnd.mColumn >= GetLineMaxColumn(aStart.mLine)
+				? line.size()
+				: std::min(static_cast<size_t>(endIndex), line.size());
+			EraseBytes(startLineIndex, start, end);
+			return;
+		}
+
+		Line& firstLine = mLines[startLineIndex];
+		Line& lastLine = mLines[endLineIndex];
+		const size_t firstErase = std::min(
+			static_cast<size_t>(startIndex), firstLine.mGlyphs.size());
+		const size_t lastErase = std::min(
+			static_cast<size_t>(endIndex), lastLine.mGlyphs.size());
+		firstLine.mGlyphs.erase(
+			firstLine.mGlyphs.begin() + static_cast<std::ptrdiff_t>(firstErase),
+			firstLine.mGlyphs.end());
+		firstLine.mGlyphs.insert(
+			firstLine.mGlyphs.end(),
+			lastLine.mGlyphs.begin() + static_cast<std::ptrdiff_t>(lastErase),
+			lastLine.mGlyphs.end());
+		Touch(firstLine);
+		RemoveLine(aStart.mLine + 1, aEnd.mLine + 1);
+		if (!mPendingLog) {
+			ResetPendingLog(startLineIndex);
+		}
 	}
 
-	int TerminalData::InsertTextAt(Coordinates& /* inout */ aWhere, const char* aValue)
+	int TerminalData::InsertTextAt(
+		Coordinates& /* inout */ aWhere, const char* aValue)
 	{
 		assert(!mReadOnly);
+		if (mReadOnly || aValue == nullptr || aWhere.mLine < 0
+			|| static_cast<size_t>(aWhere.mLine) >= mLines.size()) {
+			return 0;
+		}
 
-		int cindex = GetCharacterIndex(aWhere);
+		int characterIndex = GetCharacterIndex(aWhere);
 		int totalLines = 0;
-		while (*aValue != '\0')
-		{
-			assert(!mLines.empty());
-
-			if (*aValue == '\r')
-			{
-				// skip
+		while (*aValue != '\0') {
+			if (*aValue == '\r') {
 				++aValue;
 			}
-			else if (*aValue == '\n')
+			else if (*aValue == '\n') {
 			{
-				if (cindex < (int)mLines[aWhere.mLine].size())
-				{
-					auto& newLine = InsertLine(aWhere.mLine + 1);
-					auto& line = mLines[aWhere.mLine];
-					newLine.insert(newLine.begin(), line.begin() + cindex, line.end());
-					line.erase(line.begin() + cindex, line.end());
+				const size_t lineIndex = static_cast<size_t>(aWhere.mLine);
+				const size_t splitIndex = std::min(
+					static_cast<size_t>(std::max(characterIndex, 0)),
+					mLines[lineIndex].mGlyphs.size());
+				InsertLine(aWhere.mLine + 1);
+
+				Line& line = mLines[lineIndex];
+				Line& newLine = mLines[lineIndex + 1];
+				newLine.mGlyphs.insert(
+					newLine.mGlyphs.end(),
+					line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(splitIndex),
+					line.mGlyphs.end());
+				line.mGlyphs.erase(
+					line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(splitIndex),
+					line.mGlyphs.end());
+				Touch(line);
+				if (!newLine.mGlyphs.empty()) {
+					Touch(newLine);
 				}
-				else
-				{
-					InsertLine(aWhere.mLine + 1);
-				}
+			}
 				++aWhere.mLine;
 				aWhere.mColumn = 0;
-				cindex = 0;
+				characterIndex = 0;
 				++totalLines;
 				++aValue;
 			}
-			else
-			{
-				auto& line = mLines[aWhere.mLine];
-				auto d = UTF8CharLength(*aValue);
-				while (d-- > 0 && *aValue != '\0')
-					line.insert(line.begin() + cindex++, Glyph(*aValue++, PaletteIndex::Default));
+			else {
+				Line& line = mLines[static_cast<size_t>(aWhere.mLine)];
+				int bytesRemaining = UTF8CharLength(*aValue);
+				while (bytesRemaining-- > 0 && *aValue != '\0') {
+					line.mGlyphs.insert(
+						line.mGlyphs.begin() + characterIndex++,
+						Glyph(*aValue++, PaletteIndex::Default));
+				}
+				Touch(line);
 				++aWhere.mColumn;
 			}
-
-			mTextChanged = true;
 		}
 
 		return totalLines;
@@ -186,87 +325,91 @@ namespace imterm {
 
 	void TerminalData::SetText(const std::string& aText)
 	{
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
+		}
+		LogPendingLine(true);
 		mLines.clear();
-		mLines.emplace_back(Line());
-		for (auto chr : aText)
-		{
-			if (chr == '\r')
-			{
-				// ignore the carriage return character
+		mLines.emplace_back();
+		for (const char character : aText) {
+			if (character == '\r') {
+				continue;
 			}
-			else if (chr == '\n')
-				mLines.emplace_back(Line());
-			else
-			{
-				mLines.back().emplace_back(Glyph(chr, PaletteIndex::Default));
+			if (character == '\n') {
+				mLines.emplace_back();
+			}
+			else {
+				mLines.back().mGlyphs.emplace_back(
+					character, PaletteIndex::Default);
 			}
 		}
-
+		for (Line& line : mLines) {
+			if (!line.mGlyphs.empty()) {
+				line.Touch();
+			}
+		}
+		ResetPendingLog(mLines.size() - 1);
 		mTextChanged = true;
-
-		// TODO: mScrollToTop
-		//mScrollToTop = true;
-
 	}
 
 	void TerminalData::SetTextLines(const std::vector<std::string>& aLines)
 	{
-		mLines.clear();
-
-		if (aLines.empty())
-		{
-			mLines.emplace_back(Line());
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
 		}
-		else
-		{
-			mLines.resize(aLines.size());
+		LogPendingLine(true);
+		mLines.clear();
+		mLines.resize(std::max<size_t>(1, aLines.size()));
 
-			for (size_t i = 0; i < aLines.size(); ++i)
-			{
-				const std::string& aLine = aLines[i];
-
-				mLines[i].reserve(aLine.size());
-				for (size_t j = 0; j < aLine.size(); ++j)
-					mLines[i].emplace_back(Glyph(aLine[j], PaletteIndex::Default));
+		for (size_t lineIndex = 0; lineIndex < aLines.size(); ++lineIndex) {
+			Line& line = mLines[lineIndex];
+			line.mGlyphs.reserve(aLines[lineIndex].size());
+			for (const char character : aLines[lineIndex]) {
+				line.mGlyphs.emplace_back(character, PaletteIndex::Default);
+			}
+			if (!line.mGlyphs.empty()) {
+				line.Touch();
 			}
 		}
 
+		ResetPendingLog(mLines.size() - 1);
 		mTextChanged = true;
-		// TODO: mScrollToTop
-		//mScrollToTop = true;
-
 	}
 
-	std::string TerminalData::GetText(const Coordinates& aStart, const Coordinates& aEnd) const
+	std::string TerminalData::GetText(
+		const Coordinates& aStart, const Coordinates& aEnd) const
 	{
 		std::string result;
+		int lineIndex = aStart.mLine;
+		const int endLine = aEnd.mLine;
+		int byteIndex = GetCharacterIndex(aStart);
+		const int endByteIndex = GetCharacterIndex(aEnd);
+		if (lineIndex < 0 || byteIndex < 0) {
+			return result;
+		}
 
-		auto lstart = aStart.mLine;
-		auto lend = aEnd.mLine;
-		auto istart = GetCharacterIndex(aStart);
-		auto iend = GetCharacterIndex(aEnd);
-		size_t s = 0;
+		size_t reserveSize = 0;
+		for (int index = lineIndex;
+			index < endLine && static_cast<size_t>(index) < mLines.size(); ++index) {
+			reserveSize += mLines[static_cast<size_t>(index)].size();
+		}
+		result.reserve(reserveSize + reserveSize / 8);
 
-		for (size_t i = lstart; i < lend; i++)
-			s += mLines[i].size();
-
-		result.reserve(s + s / 8);
-
-		while (istart < iend || lstart < lend)
-		{
-			if (lstart >= (int)mLines.size())
+		while (byteIndex < endByteIndex || lineIndex < endLine) {
+			if (static_cast<size_t>(lineIndex) >= mLines.size()) {
 				break;
-
-			auto& line = mLines[lstart];
-			if (istart < (int)line.size())
-			{
-				result += line[istart].mChar;
-				istart++;
 			}
-			else
-			{
-				istart = 0;
-				++lstart;
+
+			const Line& line = mLines[static_cast<size_t>(lineIndex)];
+			if (static_cast<size_t>(byteIndex) < line.size()) {
+				result += line[static_cast<size_t>(byteIndex)].mChar;
+				++byteIndex;
+			}
+			else {
+				byteIndex = 0;
+				++lineIndex;
 				result += '\n';
 			}
 		}
@@ -274,127 +417,138 @@ namespace imterm {
 		return result;
 	}
 
-
 	std::string TerminalData::GetText() const
 	{
-		return GetText(Coordinates(), Coordinates((int)mLines.size(), 0));
+		return GetText(
+			Coordinates(), Coordinates(static_cast<int>(mLines.size()), 0));
 	}
 
 	std::vector<std::string> TerminalData::GetTextLines() const
 	{
 		std::vector<std::string> result;
-
 		result.reserve(mLines.size());
-
-		for (auto& line : mLines)
-		{
+		for (const Line& line : mLines) {
 			std::string text;
-
-			text.resize(line.size());
-
-			for (size_t i = 0; i < line.size(); ++i)
-				text[i] = line[i].mChar;
-
+			text.reserve(line.size());
+			for (const Glyph& glyph : line) {
+				text += static_cast<char>(glyph.mChar);
+			}
 			result.emplace_back(std::move(text));
 		}
-
 		return result;
 	}
 
-
-	void TerminalData::InputGlyph(Line& aLine, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue) {
-		if (aColumnIndex < 0) {
-			aColumnIndex = 0;
+	void TerminalData::InputGlyph(
+		size_t aLineIndex, int& aColumnIndex,
+		PaletteIndex aPaletteIndex, uint8_t aValue)
+	{
+		assert(!mReadOnly);
+		if (mReadOnly) {
+			return;
 		}
+		Line& line = mLines.at(aLineIndex);
+		aColumnIndex = std::max(aColumnIndex, 0);
 		const size_t column = static_cast<size_t>(aColumnIndex);
 
-		// Add spaces until the data structure size matches the current column index 
-		while (aLine.size() < column) {
-			aLine.push_back(Glyph(' ', PaletteIndex::Default));
+		while (line.mGlyphs.size() < column) {
+			line.mGlyphs.emplace_back(' ', PaletteIndex::Default);
 		}
-
-		if (aLine.size() == column) {
-			// Add a character
-			aLine.emplace_back(aValue, aPaletteIndex);
+		if (line.mGlyphs.size() == column) {
+			line.mGlyphs.emplace_back(aValue, aPaletteIndex);
 		}
 		else {
-			// Replace a character
-			aLine[column].mChar = aValue;
-			aLine[column].mColorIndex = aPaletteIndex;
+			line.mGlyphs[column].mChar = aValue;
+			line.mGlyphs[column].mColorIndex = aPaletteIndex;
 		}
+		if (!mPendingLog) {
+			ResetPendingLog(aLineIndex);
+		}
+		Touch(line);
 		++aColumnIndex;
 	}
 
 	int TerminalData::GetCharacterIndex(const Coordinates& aCoordinates) const
 	{
-		if (aCoordinates.mLine >= mLines.size())
+		if (aCoordinates.mLine < 0
+			|| static_cast<size_t>(aCoordinates.mLine) >= mLines.size()) {
 			return -1;
-		auto& line = mLines[aCoordinates.mLine];
-		int c = 0;
-		int i = 0;
-		for (; i < line.size() && c < aCoordinates.mColumn;)
-		{
-			if (line[i].mChar == '\t')
-				c = (c / mTabSize) * mTabSize + mTabSize;
-			else
-				++c;
-			i += TerminalData::UTF8CharLength(line[i].mChar, line.size() - i);
 		}
-		return i;
+		const Line& line = mLines[static_cast<size_t>(aCoordinates.mLine)];
+		int column = 0;
+		size_t index = 0;
+		while (index < line.size() && column < aCoordinates.mColumn) {
+			if (line[index].mChar == '\t') {
+				column = (column / mTabSize) * mTabSize + mTabSize;
+			}
+			else {
+				++column;
+			}
+			index += static_cast<size_t>(UTF8CharLength(
+				line[index].mChar, line.size() - index));
+		}
+		return static_cast<int>(index);
 	}
 
 	int TerminalData::GetCharacterColumn(int aLine, int aIndex) const
 	{
-		if (aLine >= mLines.size())
+		if (aLine < 0 || static_cast<size_t>(aLine) >= mLines.size()) {
 			return 0;
-		auto& line = mLines[aLine];
-		int col = 0;
-		int i = 0;
-		while (i < aIndex && i < (int)line.size())
-		{
-			auto c = line[i].mChar;
-			i += TerminalData::UTF8CharLength(c, line.size() - i);
-			if (c == '\t')
-				col = (col / mTabSize) * mTabSize + mTabSize;
-			else
-				col++;
 		}
-		return col;
+		const Line& line = mLines[static_cast<size_t>(aLine)];
+		int column = 0;
+		size_t index = 0;
+		while (index < static_cast<size_t>(std::max(aIndex, 0))
+			&& index < line.size()) {
+			const Char character = line[index].mChar;
+			index += static_cast<size_t>(UTF8CharLength(
+				character, line.size() - index));
+			if (character == '\t') {
+				column = (column / mTabSize) * mTabSize + mTabSize;
+			}
+			else {
+				++column;
+			}
+		}
+		return column;
 	}
 
 	int TerminalData::GetLineCharacterCount(int aLine) const
 	{
-		if (aLine >= mLines.size())
+		if (aLine < 0 || static_cast<size_t>(aLine) >= mLines.size()) {
 			return 0;
-		auto& line = mLines[aLine];
-		int c = 0;
-		for (size_t i = 0; i < line.size(); c++)
-			i += static_cast<size_t>(TerminalData::UTF8CharLength(
-				line[i].mChar, line.size() - i));
-		return c;
+		}
+		const Line& line = mLines[static_cast<size_t>(aLine)];
+		int count = 0;
+		for (size_t index = 0; index < line.size(); ++count) {
+			index += static_cast<size_t>(UTF8CharLength(
+				line[index].mChar, line.size() - index));
+		}
+		return count;
 	}
 
 	int TerminalData::GetLineMaxColumn(int aLine) const
 	{
-		if (aLine >= mLines.size())
+		if (aLine < 0 || static_cast<size_t>(aLine) >= mLines.size()) {
 			return 0;
-		auto& line = mLines[aLine];
-		int col = 0;
-		for (size_t i = 0; i < line.size(); )
-		{
-			auto c = line[i].mChar;
-			if (c == '\t')
-				col = (col / mTabSize) * mTabSize + mTabSize;
-			else
-				col++;
-			i += static_cast<size_t>(TerminalData::UTF8CharLength(
-				c, line.size() - i));
 		}
-		return col;
+		const Line& line = mLines[static_cast<size_t>(aLine)];
+		int column = 0;
+		for (size_t index = 0; index < line.size();) {
+			const Char character = line[index].mChar;
+			if (character == '\t') {
+				column = (column / mTabSize) * mTabSize + mTabSize;
+			}
+			else {
+				++column;
+			}
+			index += static_cast<size_t>(UTF8CharLength(
+				character, line.size() - index));
+		}
+		return column;
 	}
 
 	void TerminalData::SetTabSize(int aValue)
 	{
-		mTabSize = std::max(0, std::min(32, aValue));
+		mTabSize = std::max(1, std::min(32, aValue));
 	}
 }

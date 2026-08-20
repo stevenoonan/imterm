@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <stdexcept>
+#include <thread>
+
 #include "terminal_data.h"
+#include "test_support.h"
 
 namespace {
 
@@ -8,8 +13,8 @@ TEST(TerminalDataTest, StartsWithOneEmptyLine)
 {
     imterm::TerminalData data;
 
-    ASSERT_EQ(data.mLines.size(), 1U);
-    EXPECT_TRUE(data.mLines.front().empty());
+    ASSERT_EQ(data.GetLineCount(), 1U);
+    EXPECT_TRUE(data.GetLine(0).empty());
     EXPECT_FALSE(data.IsTextChanged());
 }
 
@@ -60,6 +65,45 @@ TEST(TerminalDataTest, DeletesAcrossMultipleLines)
     data.DeleteRange(Coordinates(0, 1), Coordinates(2, 1));
 
     EXPECT_EQ(data.GetTextLines(), std::vector<std::string>({"ahi"}));
+}
+
+TEST(TerminalDataTest, RepeatedGrowthResetAndRemovalPreserveANonemptyBuffer)
+{
+    imterm::TerminalData data;
+
+    for (int index = 0; index < 4096; ++index) {
+        data.InsertLine(static_cast<int>(data.GetLineCount()));
+    }
+    EXPECT_EQ(data.GetLineCount(), 4097U);
+
+    data.SetTextLines({});
+    ASSERT_EQ(data.GetLineCount(), 1U);
+    EXPECT_TRUE(data.GetLine(0).empty());
+
+    data.SetText("one\ntwo\nthree");
+    while (data.GetLineCount() > 1) {
+        data.RemoveLine(0);
+    }
+    ASSERT_EQ(data.GetLineCount(), 1U);
+    EXPECT_EQ(imterm::test::LineText(data.GetLine(0)), "three");
+    EXPECT_THROW(data.RemoveLine(0), std::invalid_argument);
+    EXPECT_EQ(data.GetLineCount(), 1U);
+}
+
+TEST(TerminalDataTest, TimestampTracksTheMostRecentContentMutation)
+{
+    imterm::TerminalData data;
+    const auto initialTimestamp = data.GetLine(0).GetTimestamp();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+    int column = 0;
+    data.InputGlyph(0, column, imterm::PaletteIndex::Default, 'x');
+    const auto inputTimestamp = data.GetLine(0).GetTimestamp();
+    EXPECT_GT(inputTimestamp, initialTimestamp);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    data.ReplaceBytesWithSpaces(0, 0, 1);
+    EXPECT_GT(data.GetLine(0).GetTimestamp(), inputTimestamp);
 }
 
 } // namespace

@@ -64,7 +64,7 @@ if (GLFW_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/glfw/CMakeLists.txt"
 	option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
 	option(GLFW_INSTALL "Generate installation target" OFF)
 	option(GLFW_DOCUMENT_INTERNALS "Include internals in documentation" OFF)
-	option(GLFW_BUILD_WAYLAND "Build GLFW with Wayland support" ON)
+	option(GLFW_BUILD_WAYLAND "Build GLFW with Wayland support" OFF)
 	add_subdirectory(${GLFW_DIR} binary_dir EXCLUDE_FROM_ALL)
 	include_directories(${GLFW_DIR}/include)
 	# Use vulkan headers from glfw:
@@ -145,7 +145,6 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/terminal_input.cpp
 	${SRC_DIR}/terminal_input.h
 	${SRC_DIR}/terminal_types.h
-	${SRC_DIR}/vector_timed.h
 )
 
 add_library(imterm_core STATIC ${IMTERM_CORE_SRCS})

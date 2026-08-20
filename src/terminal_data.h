@@ -5,12 +5,10 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <iostream>
-#include <fstream>
 #include <memory>
+#include <optional>
 
 #include "terminal_types.h"
-#include "vector_timed.h"
 #include "coordinates.h"
 #include "terminal_logger.h"
 
@@ -20,17 +18,18 @@ namespace imterm {
 	{
 	public:
 
-		// TODO: make this private
-		Lines mLines = std::vector<Line>{
-			Line()
-		};
-
-
 		TerminalData();
-		TerminalData(std::shared_ptr<TerminalLogger> mLogger);
+		explicit TerminalData(std::shared_ptr<TerminalLogger> aLogger);
 		~TerminalData();
 
-		Line& InsertLine(int aIndex);
+		// Temporary read-only adapter used by TerminalView during the refactor.
+		const Lines& GetLines() const noexcept { return mLines; }
+		const Line& GetLine(size_t aIndex) const { return mLines.at(aIndex); }
+		size_t GetLineCount() const noexcept { return mLines.size(); }
+		size_t GetLineSize(size_t aIndex) const { return mLines.at(aIndex).size(); }
+
+		void InsertLine(int aIndex);
+		void EnsureLineExists(size_t aIndex);
 
 		void SetReadOnly(bool aValue);
 		bool IsReadOnly() const { return mReadOnly; }
@@ -47,7 +46,9 @@ namespace imterm {
 		std::string GetText(const Coordinates& aStart, const Coordinates& aEnd) const;
 		std::string GetText() const;
 
-		void InputGlyph(Line& aLine, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue);
+		void InputGlyph(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue);
+		void EraseBytes(size_t aLineIndex, size_t aStart, size_t aEnd);
+		void ReplaceBytesWithSpaces(size_t aLineIndex, size_t aStart, size_t aEnd);
 
 		int GetCharacterIndex(const Coordinates& aCoordinates) const;
 		int GetCharacterColumn(int aLine, int aIndex) const;
@@ -83,6 +84,12 @@ namespace imterm {
 
 
 	private:
+		struct PendingLog {
+			size_t mLineIndex;
+			int mLineNumber;
+		};
+
+		Lines mLines = Lines{Line()};
 
 		bool mReadOnly;
 		bool mTextChanged;
@@ -90,10 +97,13 @@ namespace imterm {
 
 		std::shared_ptr<TerminalLogger> mLogger = nullptr;
 
-		Line* mUnloggedLine = &mLines[0];
-		int mUnloggedLineNumber = 1;
+		std::optional<PendingLog> mPendingLog = PendingLog{0, 1};
+		std::optional<TerminalLogger::WatcherToken> mLoggerWatcherToken;
 
-		void LogUnloggedLine(bool aLoggerIsClosing=false);
+		void LogPendingLine(bool aLoggerIsClosing=false);
+		void ResetPendingLog(size_t aLineIndex = 0);
+		void AdjustPendingLogForRemoval(size_t aStart, size_t aEnd);
+		void Touch(Line& aLine) noexcept;
 
 	};
 

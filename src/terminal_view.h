@@ -16,7 +16,6 @@
 #include "escape_sequence_parser.h"
 #include "terminal_state.h"
 #include "terminal_data.h"
-#include "vector_timed.h"
 
 namespace imterm {
 

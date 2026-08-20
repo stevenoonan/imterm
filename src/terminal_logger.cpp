@@ -1,5 +1,4 @@
-#include <atomic>
-#include <assert.h>
+#include <algorithm>
 #include "terminal_logger.h"
 
 namespace imterm {
@@ -28,18 +27,20 @@ namespace imterm {
 		Close();
 	}
 
-	void TerminalLogger::RegisterLogClosingWatcher(LogClosingCallback callback) {
-		mLogClosingWatchers.push_back(std::move(callback));
+	TerminalLogger::WatcherToken TerminalLogger::RegisterLogClosingWatcher(LogClosingCallback callback) {
+		const WatcherToken token = mNextWatcherToken++;
+		mLogClosingWatchers.push_back({token, std::move(callback)});
+		return token;
 	}
 
-	bool TerminalLogger::DeregisterLogClosingWatcher(LogClosingCallback callback)
+	bool TerminalLogger::DeregisterLogClosingWatcher(WatcherToken aToken)
 	{
 		const size_t originalSize = mLogClosingWatchers.size();
 
 		mLogClosingWatchers.erase(
 			std::remove_if(mLogClosingWatchers.begin(), mLogClosingWatchers.end(),
-				[callback](const LogClosingCallback& storedCallback) {
-					return callback.target<void()>() == storedCallback.target<void()>();
+				[aToken](const LogClosingWatcher& aWatcher) {
+					return aWatcher.mToken == aToken;
 				}),
 			mLogClosingWatchers.end());
 
@@ -108,31 +109,69 @@ namespace imterm {
 	}
 
 	// Function to trigger the LogClosing event using a lambda
-	void TerminalLogger::Close() {
-
-		// Call the watchers first. They may call Log() which can open mOutput
-		for (const auto& watcher : mLogClosingWatchers) {
-			watcher();
+	void TerminalLogger::Close() noexcept {
+		if (mClosing) {
+			return;
 		}
 
-		if (mOutput.get() && mOutput->is_open()) {
-			mOutput->flush();
-			mOutput->close();
-			
+		struct ClosingGuard {
+			bool& mFlag;
+			~ClosingGuard() { mFlag = false; }
+		} guard{mClosing};
+		mClosing = true;
+
+		// Copy callbacks so a watcher may safely deregister itself while Close is
+		// dispatching. Exceptions are contained because Close is used by the
+		// destructor and by configuration setters.
+		std::vector<LogClosingWatcher> watchers;
+		try {
+			watchers = mLogClosingWatchers;
+		}
+		catch (const std::exception& error) {
+			std::cerr << "TerminalLogger could not copy close watchers: "
+				<< error.what() << '\n';
+		}
+		catch (...) {
+			std::cerr << "TerminalLogger could not copy close watchers\n";
+		}
+		for (const auto& watcher : watchers) {
+			try {
+				watcher.mCallback();
+			}
+			catch (const std::exception& error) {
+				std::cerr << "TerminalLogger close watcher failed: "
+					<< error.what() << '\n';
+			}
+			catch (...) {
+				std::cerr << "TerminalLogger close watcher failed\n";
+			}
+		}
+
+		try {
+			if (mOutput && mOutput->is_open()) {
+				mOutput->flush();
+				mOutput->close();
+			}
+		}
+		catch (const std::exception& error) {
+			std::cerr << "TerminalLogger close failed: " << error.what() << '\n';
+		}
+		catch (...) {
+			std::cerr << "TerminalLogger close failed\n";
 		}
 	}
 
-	void TerminalLogger::Log(Line& aLine, int aLineNumber) {
-
-		static std::atomic_flag reentrantFlag = ATOMIC_FLAG_INIT;
-
+	void TerminalLogger::Log(const Line& aLine, int aLineNumber) {
 		if (!mOptions.Enabled) return;
 
-		if (reentrantFlag.test_and_set()) {
+		if (mLogging.test_and_set()) {
 			std::cerr << "TerminalLogger::Log reentrancy, skipping...\n";
-			assert(0);
 			return;
 		}
+		struct LoggingGuard {
+			std::atomic_flag& mFlag;
+			~LoggingGuard() { mFlag.clear(); }
+		} guard{mLogging};
 
 
 		if (!mOutput.get() || (mOutput.get() && !mOutput->is_open())) {
@@ -163,7 +202,7 @@ namespace imterm {
 			}
 
 			if (mOptions.TimeStamps) {
-				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(aLine.getTimestamp());
+				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(aLine.GetTimestamp());
 				std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
 				if (time_tm_timestamp) {
 					oss << std::put_time(time_tm_timestamp, "%H:%M:%S ");
@@ -182,8 +221,6 @@ namespace imterm {
 			*mOutput.get() << oss.str() << "\n";
 			mOutput->flush();
 		}
-
-		reentrantFlag.clear();
 
 	}
 

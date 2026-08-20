@@ -6,6 +6,8 @@
 #include <chrono>
 #include <vector>
 #include <functional>
+#include <atomic>
+#include <cstdint>
 
 #include "terminal_types.h"
 
@@ -16,6 +18,7 @@ namespace imterm {
 	public:
 
 		using LogClosingCallback = std::function<void()>;
+		using WatcherToken = std::uint64_t;
 
 
 
@@ -38,7 +41,7 @@ namespace imterm {
 		);
 		~TerminalLogger();
 
-		void Log(Line& aLine, int aLineNumber);
+		void Log(const Line& aLine, int aLineNumber);
 
 		inline Options GetOptions() { return mOptions; }
 		void SetOptions(const Options& aOptions) { mOptions = aOptions; }
@@ -59,11 +62,11 @@ namespace imterm {
 		static std::filesystem::path GetDefaultLogPath();
 
 		// Function to register a watcher for the LogClosing event using a lambda
-		void RegisterLogClosingWatcher(LogClosingCallback callback);
+		WatcherToken RegisterLogClosingWatcher(LogClosingCallback callback);
 
-		bool DeregisterLogClosingWatcher(LogClosingCallback callback);
+		bool DeregisterLogClosingWatcher(WatcherToken aToken);
 
-		void Close();
+		void Close() noexcept;
 
 	private:
 
@@ -81,7 +84,15 @@ namespace imterm {
 
 		//bool mNewLogFile = true;
 
-		std::vector<LogClosingCallback> mLogClosingWatchers;
+		struct LogClosingWatcher {
+			WatcherToken mToken;
+			LogClosingCallback mCallback;
+		};
+
+		std::vector<LogClosingWatcher> mLogClosingWatchers;
+		WatcherToken mNextWatcherToken = 1;
+		std::atomic_flag mLogging = ATOMIC_FLAG_INIT;
+		bool mClosing = false;
 	};
 
 }

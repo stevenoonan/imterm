@@ -50,8 +50,8 @@ TerminalView::TerminalView(std::shared_ptr<TerminalData> aTerminalData, std::sha
 	, mIgnoreImGuiChild(false)
 	, mShowWhitespaces(false)
 	, mStartTime(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+	, mLines(aTerminalData->GetLines())
 	, mData(aTerminalData)
-	, mLines(aTerminalData->mLines)
 	, mTermState(aTerminalState)
 	, mOptions(aOptions)
 {
@@ -814,7 +814,7 @@ void TerminalView::Render()
 			}
 
 			if (mOptions.TimeStamps) {
-				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.getTimestamp());
+				std::time_t time_t_timestamp = std::chrono::system_clock::to_time_t(line.GetTimestamp());
 				std::tm* time_tm_timestamp = std::localtime(&time_t_timestamp);
 				int len = snprintf(margin_work_buf_ptr, margin_work_buf_remainder, marginTimeStampStringFormat, time_tm_timestamp->tm_hour, time_tm_timestamp->tm_min, time_tm_timestamp->tm_sec);
 				if (len > 0) {
