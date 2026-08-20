@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 
 #include "terminal_types.h"
 #include "coordinates.h"
@@ -15,6 +16,18 @@
 #include "terminal_logger.h"
 
 namespace imterm {
+
+	struct TextRange
+	{
+		Coordinates mStart;
+		Coordinates mEnd;
+	};
+
+	struct TextMatchStatus
+	{
+		size_t mCurrent = 0;
+		size_t mTotal = 0;
+	};
 
 	class TerminalData
 	{
@@ -47,6 +60,19 @@ namespace imterm {
 		std::vector<std::string> GetTextLines() const;
 		std::string GetText(const Coordinates& aStart, const Coordinates& aEnd) const;
 		std::string GetText() const;
+		std::optional<TextRange> FindNextText(
+			std::string_view aQuery, const Coordinates& aFrom,
+			bool aMatchCase) const;
+		std::optional<TextRange> FindPreviousText(
+			std::string_view aQuery, const Coordinates& aBefore,
+			bool aMatchCase) const;
+		bool TextMatches(
+			const TextRange& aRange, std::string_view aQuery,
+			bool aMatchCase) const;
+		TextMatchStatus GetTextMatchStatus(
+			std::string_view aQuery,
+			const std::optional<TextRange>& aCurrentMatch,
+			bool aMatchCase) const;
 
 		void InputGlyph(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue);
 		void InputBytes(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, std::span<const uint8_t> aBytes);

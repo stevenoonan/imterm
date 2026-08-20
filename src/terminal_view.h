@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <map>
+#include <optional>
 #include <regex>
 #include <queue>
 #include <chrono>
@@ -146,6 +147,10 @@ namespace imterm {
 		void SetSelectionStart(const Coordinates& aPosition);
 		void SetSelectionEnd(const Coordinates& aPosition);
 		void SetSelection(const Coordinates& aStart, const Coordinates& aEnd, SelectionMode aMode = SelectionMode::Normal);
+		Coordinates GetSelectionStart() const { return mUiState.mSelectionStart; }
+		Coordinates GetSelectionEnd() const { return mUiState.mSelectionEnd; }
+		void ClearSelection();
+		void Reveal(const Coordinates& aPosition);
 		void SelectWordUnderCursor();
 		void SelectAll();
 		bool HasSelection() const;
@@ -185,6 +190,7 @@ namespace imterm {
 		};
 
 		float TextDistanceToLineStart(const Coordinates& aFrom) const;
+		void EnsureCoordinateVisible(const Coordinates& aPosition);
 		void EnsureCursorVisible();
 		int GetPageSize() const;
 
@@ -220,6 +226,7 @@ namespace imterm {
 		bool mWithinRender;
 		bool mScrollToCursor;
 		bool mScrollToTop;
+		std::optional<Coordinates> mRevealPosition;
 
 		bool mColorizerEnabled;
 		float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the TextEditor.

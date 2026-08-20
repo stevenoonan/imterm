@@ -1,5 +1,6 @@
 #include <vector>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -52,6 +53,195 @@ namespace imterm {
 
     constexpr std::chrono::seconds port_cache_duration = 1s;
 
+    struct FindState {
+        bool open = false;
+        bool request_focus = false;
+        bool match_case = false;
+        size_t current_match = 0;
+        size_t total_matches = 0;
+        std::array<char, 1024> query{};
+        Coordinates anchor;
+        std::optional<TextRange> active_match;
+        const TerminalView* owner = nullptr;
+    };
+
+    static FindState find_state;
+
+    void RefreshFindStatus() {
+        const TextMatchStatus status = term_data->GetTextMatchStatus(
+            find_state.query.data(), find_state.active_match,
+            find_state.match_case);
+        find_state.current_match = status.mCurrent;
+        find_state.total_matches = status.mTotal;
+    }
+
+    void ApplyFindResult(std::optional<TextRange> result) {
+        find_state.active_match = result;
+        if (result) {
+            term_view->SetSelection(result->mStart, result->mEnd);
+            term_view->Reveal(result->mStart);
+        }
+        else {
+            term_view->ClearSelection();
+        }
+        RefreshFindStatus();
+    }
+
+    void FindFromAnchor() {
+        const std::string_view query(find_state.query.data());
+        if (query.empty()) {
+            find_state.active_match.reset();
+            find_state.current_match = 0;
+            find_state.total_matches = 0;
+            term_view->ClearSelection();
+            return;
+        }
+        ApplyFindResult(term_data->FindNextText(
+            query, find_state.anchor, find_state.match_case));
+    }
+
+    void FindNext() {
+        const std::string_view query(find_state.query.data());
+        if (query.empty()) {
+            FindFromAnchor();
+            return;
+        }
+        const Coordinates from = find_state.active_match
+            ? find_state.active_match->mEnd
+            : find_state.anchor;
+        ApplyFindResult(term_data->FindNextText(
+            query, from, find_state.match_case));
+    }
+
+    void FindPrevious() {
+        const std::string_view query(find_state.query.data());
+        if (query.empty()) {
+            FindFromAnchor();
+            return;
+        }
+        const Coordinates before = find_state.active_match
+            ? find_state.active_match->mStart
+            : find_state.anchor;
+        ApplyFindResult(term_data->FindPreviousText(
+            query, before, find_state.match_case));
+    }
+
+    void OpenFind() {
+        if (!term_view || !term_data) {
+            return;
+        }
+        if (find_state.open) {
+            find_state.request_focus = true;
+            return;
+        }
+
+        find_state.open = true;
+        find_state.request_focus = true;
+        find_state.active_match.reset();
+        find_state.owner = term_view.get();
+        find_state.anchor = term_view->HasSelection()
+            ? term_view->GetSelectionEnd()
+            : term_view->GetCursorPosition();
+
+        if (term_view->HasSelection()
+            && term_view->GetSelectionStart().mLine
+                == term_view->GetSelectionEnd().mLine) {
+            const std::string selected = term_view->GetSelectedText();
+            if (!selected.empty() && selected.size() < find_state.query.size()) {
+                find_state.query.fill('\0');
+                std::copy(selected.begin(), selected.end(), find_state.query.begin());
+            }
+        }
+
+        FindFromAnchor();
+    }
+
+    void CloseFind() {
+        find_state.open = false;
+        find_state.request_focus = false;
+    }
+
+    void FindBar() {
+        if (!find_state.open || !term_view || !term_data) {
+            return;
+        }
+
+        if (find_state.owner != term_view.get()) {
+            find_state.owner = term_view.get();
+            find_state.anchor = term_view->GetCursorPosition();
+            find_state.active_match.reset();
+            FindFromAnchor();
+        }
+        else if (find_state.active_match
+            && !term_data->TextMatches(
+                *find_state.active_match, find_state.query.data(),
+                find_state.match_case)) {
+            find_state.active_match.reset();
+            term_view->ClearSelection();
+            RefreshFindStatus();
+        }
+        else if (term_view->IsTextChanged()) {
+            RefreshFindStatus();
+        }
+
+        ImGui::PushID("FindBar");
+        const float controls_width = ImGui::CalcTextSize(
+            "Previous  Next  Match Case  X  000 of 000").x
+            + ImGui::GetStyle().ItemSpacing.x * 7.0f;
+        ImGui::SetNextItemWidth(std::max(
+            120.0f, ImGui::GetContentRegionAvail().x - controls_width));
+        if (find_state.request_focus) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        const bool query_changed = ImGui::InputTextWithHint(
+            "##Query", "Find text", find_state.query.data(),
+            find_state.query.size(), ImGuiInputTextFlags_AutoSelectAll);
+        const bool query_active = ImGui::IsItemActive();
+        const bool enter_pressed = query_active
+            && (ImGui::IsKeyPressed(ImGuiKey_Enter)
+                || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter));
+        const bool escape_pressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+        find_state.request_focus = false;
+
+        ImGui::SameLine();
+        const bool previous_pressed = ImGui::Button("Previous");
+        ImGui::SameLine();
+        const bool next_pressed = ImGui::Button("Next");
+        ImGui::SameLine();
+        const bool case_changed = ImGui::Checkbox(
+            "Match Case", &find_state.match_case);
+        ImGui::SameLine();
+        const bool close_pressed = ImGui::Button("X");
+
+        if (query_changed || case_changed) {
+            FindFromAnchor();
+        }
+        else if (previous_pressed || (enter_pressed && ImGui::GetIO().KeyShift)) {
+            FindPrevious();
+        }
+        else if (next_pressed || enter_pressed) {
+            FindNext();
+        }
+
+        if (find_state.query[0] != '\0') {
+            ImGui::SameLine();
+            if (find_state.total_matches == 0) {
+                ImGui::TextColored(
+                    ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "0 of 0");
+            }
+            else {
+                ImGui::Text(
+                    "%zu of %zu", find_state.current_match,
+                    find_state.total_matches);
+            }
+        }
+
+        if (close_pressed || escape_pressed) {
+            CloseFind();
+        }
+        ImGui::PopID();
+    }
+
     void CaptureWindowCreate(void) {
 
         static bool capture_window_init = false;
@@ -63,7 +253,20 @@ namespace imterm {
 
         ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar);
 
+        ImGuiIO& io = ImGui::GetIO();
+        const bool find_modifier = io.ConfigMacOSXBehaviors
+            ? io.KeySuper : io.KeyCtrl;
+        const bool find_alt = io.ConfigMacOSXBehaviors
+            ? io.KeyCtrl : io.KeyAlt;
+        if (term_view && find_modifier && !io.KeyShift && !find_alt
+            && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+            && ImGui::IsKeyPressed(ImGuiKey_F)) {
+            OpenFind();
+        }
+
         Menu();
+
+        FindBar();
 
         if (term_view && render_view) {
             term_view->Render("TerminalView");
@@ -96,7 +299,7 @@ namespace imterm {
                         serial->read(buffer, available);
                         term_state->Input(buffer);
 
-                        if (auto_scroll) {
+                        if (auto_scroll && !find_state.open) {
                             term_view->SetCursorToEnd();
                         }
                     }
@@ -260,6 +463,14 @@ namespace imterm {
 
             if (ImGui::MenuItem("Clear", nullptr, false, term_view != nullptr)) {
                 term_view->ClearContents();
+                find_state.active_match.reset();
+                find_state.current_match = 0;
+                find_state.total_matches = 0;
+                find_state.anchor = Coordinates();
+            }
+
+            if (ImGui::MenuItem("Find", nullptr, false, term_view != nullptr)) {
+                OpenFind();
             }
             
             if (ImGui::BeginMenu("Options")) {

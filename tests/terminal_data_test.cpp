@@ -67,6 +67,110 @@ TEST(TerminalDataTest, DeletesAcrossMultipleLines)
     EXPECT_EQ(data.GetTextLines(), std::vector<std::string>({"ahi"}));
 }
 
+TEST(TerminalDataTest, FindsNextTextFromAnAnchorAndWraps)
+{
+    imterm::TerminalData data;
+    data.SetText("one hit\nno match\nhit again");
+
+    const auto first = data.FindNextText("hit", Coordinates(0, 4), true);
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->mStart, Coordinates(0, 4));
+    EXPECT_EQ(first->mEnd, Coordinates(0, 7));
+
+    const auto second = data.FindNextText("hit", first->mEnd, true);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(second->mStart, Coordinates(2, 0));
+
+    const auto wrapped = data.FindNextText("hit", second->mEnd, true);
+    ASSERT_TRUE(wrapped.has_value());
+    EXPECT_EQ(wrapped->mStart, first->mStart);
+}
+
+TEST(TerminalDataTest, FindsPreviousTextBeforeAnAnchorAndWraps)
+{
+    imterm::TerminalData data;
+    data.SetText("hit one\nno match\nlast hit");
+
+    const auto previous = data.FindPreviousText("hit", Coordinates(2, 8), true);
+    ASSERT_TRUE(previous.has_value());
+    EXPECT_EQ(previous->mStart, Coordinates(2, 5));
+
+    const auto earlier = data.FindPreviousText("hit", previous->mStart, true);
+    ASSERT_TRUE(earlier.has_value());
+    EXPECT_EQ(earlier->mStart, Coordinates(0, 0));
+
+    const auto wrapped = data.FindPreviousText("hit", earlier->mStart, true);
+    ASSERT_TRUE(wrapped.has_value());
+    EXPECT_EQ(wrapped->mStart, previous->mStart);
+}
+
+TEST(TerminalDataTest, FindTextSupportsAsciiCaseMatching)
+{
+    imterm::TerminalData data;
+    data.SetText("Alpha alpha");
+
+    const auto insensitive = data.FindNextText("ALPHA", Coordinates(), false);
+    ASSERT_TRUE(insensitive.has_value());
+    EXPECT_EQ(insensitive->mStart, Coordinates(0, 0));
+
+    EXPECT_FALSE(data.FindNextText("ALPHA", Coordinates(), true).has_value());
+    const auto sensitive = data.FindNextText("alpha", Coordinates(), true);
+    ASSERT_TRUE(sensitive.has_value());
+    EXPECT_EQ(sensitive->mStart, Coordinates(0, 6));
+}
+
+TEST(TerminalDataTest, FindTextReturnsRenderedColumnsForTabsAndUtf8)
+{
+    imterm::TerminalData data;
+    data.SetText("\tA \xC3\xA9" "cho");
+
+    const auto tabMatch = data.FindNextText("A", Coordinates(), true);
+    ASSERT_TRUE(tabMatch.has_value());
+    EXPECT_EQ(tabMatch->mStart, Coordinates(0, 4));
+    EXPECT_EQ(tabMatch->mEnd, Coordinates(0, 5));
+
+    const auto utf8Match = data.FindNextText("\xC3\xA9" "cho", Coordinates(), true);
+    ASSERT_TRUE(utf8Match.has_value());
+    EXPECT_EQ(utf8Match->mStart, Coordinates(0, 6));
+    EXPECT_EQ(utf8Match->mEnd, Coordinates(0, 10));
+    EXPECT_TRUE(data.TextMatches(*utf8Match, "\xC3\xA9" "cho", true));
+}
+
+TEST(TerminalDataTest, FindTextRejectsEmptyAndCrossLineQueries)
+{
+    imterm::TerminalData data;
+    data.SetText("first\nsecond");
+
+    EXPECT_FALSE(data.FindNextText("", Coordinates(), false).has_value());
+    EXPECT_FALSE(data.FindNextText("first\nsecond", Coordinates(), false).has_value());
+    EXPECT_FALSE(data.FindPreviousText("missing", Coordinates(), false).has_value());
+}
+
+TEST(TerminalDataTest, ReportsTheCurrentAndTotalTextMatches)
+{
+    imterm::TerminalData data;
+    data.SetText("hit hit\nHIT\naaa");
+
+    const auto current = data.FindNextText("hit", Coordinates(0, 4), false);
+    ASSERT_TRUE(current.has_value());
+
+    const auto insensitive = data.GetTextMatchStatus("hit", current, false);
+    EXPECT_EQ(insensitive.mCurrent, 2U);
+    EXPECT_EQ(insensitive.mTotal, 3U);
+
+    const auto sensitive = data.GetTextMatchStatus("hit", current, true);
+    EXPECT_EQ(sensitive.mCurrent, 2U);
+    EXPECT_EQ(sensitive.mTotal, 2U);
+
+    const auto overlapping = data.GetTextMatchStatus("aa", std::nullopt, true);
+    EXPECT_EQ(overlapping.mCurrent, 0U);
+    EXPECT_EQ(overlapping.mTotal, 1U);
+
+    const auto missing = data.GetTextMatchStatus("missing", std::nullopt, false);
+    EXPECT_EQ(missing.mCurrent, 0U);
+    EXPECT_EQ(missing.mTotal, 0U);
+}
+
 TEST(TerminalDataTest, RepeatedGrowthResetAndRemovalPreserveANonemptyBuffer)
 {
     imterm::TerminalData data;

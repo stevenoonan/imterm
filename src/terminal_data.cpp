@@ -4,6 +4,80 @@
 #include <iostream>
 #include <stdexcept>
 
+namespace {
+
+	unsigned char FoldAscii(unsigned char aValue)
+	{
+		return aValue >= 'A' && aValue <= 'Z'
+			? static_cast<unsigned char>(aValue + ('a' - 'A'))
+			: aValue;
+	}
+
+	bool BytesEqual(char aLeft, char aRight, bool aMatchCase)
+	{
+		const auto left = static_cast<unsigned char>(aLeft);
+		const auto right = static_cast<unsigned char>(aRight);
+		return aMatchCase ? left == right : FoldAscii(left) == FoldAscii(right);
+	}
+
+	std::optional<size_t> FindForwardInLine(
+		const imterm::Line& aLine, std::string_view aQuery,
+		size_t aStart, size_t aEnd, bool aMatchCase)
+	{
+		const size_t end = std::min(aEnd, aLine.size());
+		if (aQuery.empty() || aStart > end || aQuery.size() > end - aStart) {
+			return std::nullopt;
+		}
+
+		for (size_t start = aStart; start + aQuery.size() <= end; ++start) {
+			bool matches = true;
+			for (size_t offset = 0; offset < aQuery.size(); ++offset) {
+				if (!BytesEqual(
+						static_cast<char>(aLine[start + offset].mChar),
+						aQuery[offset], aMatchCase)) {
+					matches = false;
+					break;
+				}
+			}
+			if (matches) {
+				return start;
+			}
+		}
+		return std::nullopt;
+	}
+
+	std::optional<size_t> FindBackwardInLine(
+		const imterm::Line& aLine, std::string_view aQuery,
+		size_t aStart, size_t aEnd, bool aMatchCase)
+	{
+		const size_t end = std::min(aEnd, aLine.size());
+		if (aQuery.empty() || aStart > end || aQuery.size() > end - aStart) {
+			return std::nullopt;
+		}
+
+		const size_t lastStart = end - aQuery.size();
+		for (size_t start = lastStart;; --start) {
+			bool matches = true;
+			for (size_t offset = 0; offset < aQuery.size(); ++offset) {
+				if (!BytesEqual(
+						static_cast<char>(aLine[start + offset].mChar),
+						aQuery[offset], aMatchCase)) {
+					matches = false;
+					break;
+				}
+			}
+			if (matches) {
+				return start;
+			}
+			if (start == aStart) {
+				break;
+			}
+		}
+		return std::nullopt;
+	}
+
+}
+
 namespace imterm {
 
 	TerminalData::TerminalData()
@@ -512,6 +586,140 @@ namespace imterm {
 			result.emplace_back(std::move(text));
 		}
 		return result;
+	}
+
+	std::optional<TextRange> TerminalData::FindNextText(
+		std::string_view aQuery, const Coordinates& aFrom,
+		bool aMatchCase) const
+	{
+		if (aQuery.empty() || aQuery.find_first_of("\r\n") != std::string_view::npos) {
+			return std::nullopt;
+		}
+
+		const size_t anchorLine = std::min(
+			static_cast<size_t>(std::max(aFrom.mLine, 0)), mLines.size() - 1);
+		const size_t anchorByte = GetByteOffset(BufferPosition{
+			anchorLine, RenderedColumn{std::max(aFrom.mColumn, 0)}}).mValue;
+
+		const auto makeRange = [this, aQuery](size_t aLine, size_t aByte) {
+			return TextRange{
+				Coordinates(static_cast<int>(aLine), GetCharacterColumn(
+					static_cast<int>(aLine), static_cast<int>(aByte))),
+				Coordinates(static_cast<int>(aLine), GetCharacterColumn(
+					static_cast<int>(aLine),
+					static_cast<int>(aByte + aQuery.size())))};
+		};
+
+		for (size_t line = anchorLine; line < mLines.size(); ++line) {
+			const size_t start = line == anchorLine ? anchorByte : 0;
+			if (const auto match = FindForwardInLine(
+					mLines[line], aQuery, start, mLines[line].size(), aMatchCase)) {
+				return makeRange(line, *match);
+			}
+		}
+		for (size_t line = 0; line <= anchorLine; ++line) {
+			const size_t end = line == anchorLine ? anchorByte : mLines[line].size();
+			if (const auto match = FindForwardInLine(
+					mLines[line], aQuery, 0, end, aMatchCase)) {
+				return makeRange(line, *match);
+			}
+		}
+		return std::nullopt;
+	}
+
+	std::optional<TextRange> TerminalData::FindPreviousText(
+		std::string_view aQuery, const Coordinates& aBefore,
+		bool aMatchCase) const
+	{
+		if (aQuery.empty() || aQuery.find_first_of("\r\n") != std::string_view::npos) {
+			return std::nullopt;
+		}
+
+		const size_t anchorLine = std::min(
+			static_cast<size_t>(std::max(aBefore.mLine, 0)), mLines.size() - 1);
+		const size_t anchorByte = GetByteOffset(BufferPosition{
+			anchorLine, RenderedColumn{std::max(aBefore.mColumn, 0)}}).mValue;
+
+		const auto makeRange = [this, aQuery](size_t aLine, size_t aByte) {
+			return TextRange{
+				Coordinates(static_cast<int>(aLine), GetCharacterColumn(
+					static_cast<int>(aLine), static_cast<int>(aByte))),
+				Coordinates(static_cast<int>(aLine), GetCharacterColumn(
+					static_cast<int>(aLine),
+					static_cast<int>(aByte + aQuery.size())))};
+		};
+
+		for (size_t line = anchorLine + 1; line-- > 0;) {
+			const size_t end = line == anchorLine ? anchorByte : mLines[line].size();
+			if (const auto match = FindBackwardInLine(
+					mLines[line], aQuery, 0, end, aMatchCase)) {
+				return makeRange(line, *match);
+			}
+		}
+		for (size_t line = mLines.size(); line-- > anchorLine;) {
+			const size_t start = line == anchorLine ? anchorByte : 0;
+			if (const auto match = FindBackwardInLine(
+					mLines[line], aQuery, start, mLines[line].size(), aMatchCase)) {
+				return makeRange(line, *match);
+			}
+		}
+		return std::nullopt;
+	}
+
+	bool TerminalData::TextMatches(
+		const TextRange& aRange, std::string_view aQuery,
+		bool aMatchCase) const
+	{
+		if (aQuery.empty() || aRange.mStart.mLine != aRange.mEnd.mLine
+			|| aRange.mStart.mLine < 0
+			|| static_cast<size_t>(aRange.mStart.mLine) >= mLines.size()) {
+			return false;
+		}
+		const size_t line = static_cast<size_t>(aRange.mStart.mLine);
+		const size_t start = GetByteOffset(BufferPosition{
+			line, RenderedColumn{aRange.mStart.mColumn}}).mValue;
+		const size_t end = GetByteOffset(BufferPosition{
+			line, RenderedColumn{aRange.mEnd.mColumn}}).mValue;
+		return end >= start && end - start == aQuery.size()
+			&& FindForwardInLine(
+				mLines[line], aQuery, start, end, aMatchCase) == start;
+	}
+
+	TextMatchStatus TerminalData::GetTextMatchStatus(
+		std::string_view aQuery,
+		const std::optional<TextRange>& aCurrentMatch,
+		bool aMatchCase) const
+	{
+		TextMatchStatus status;
+		if (aQuery.empty() || aQuery.find_first_of("\r\n") != std::string_view::npos) {
+			return status;
+		}
+
+		for (size_t line = 0; line < mLines.size(); ++line) {
+			size_t start = 0;
+			while (start < mLines[line].size()) {
+				const auto match = FindForwardInLine(
+					mLines[line], aQuery, start, mLines[line].size(), aMatchCase);
+				if (!match) {
+					break;
+				}
+
+				++status.mTotal;
+				const TextRange range{
+					Coordinates(static_cast<int>(line), GetCharacterColumn(
+						static_cast<int>(line), static_cast<int>(*match))),
+					Coordinates(static_cast<int>(line), GetCharacterColumn(
+						static_cast<int>(line),
+						static_cast<int>(*match + aQuery.size())))};
+				if (aCurrentMatch
+					&& aCurrentMatch->mStart == range.mStart
+					&& aCurrentMatch->mEnd == range.mEnd) {
+					status.mCurrent = status.mTotal;
+				}
+				start = *match + aQuery.size();
+			}
+		}
+		return status;
 	}
 
 	void TerminalData::InputGlyph(

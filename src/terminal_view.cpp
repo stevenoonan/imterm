@@ -538,6 +538,9 @@ void TerminalView::HandleKeyboardInputs()
 
 			for (int key = (int)ImGuiKey_A; key < (int)ImGuiKey_Z; key++) {
 				if (ImGui::IsKeyPressed((ImGuiKey)key)) {
+					if (key == static_cast<int>(ImGuiKey_F)) {
+						continue;
+					}
 					auto it = imguiKeyToAscii.find(static_cast<ImGuiKey>(key));
 					if (it != imguiKeyToAscii.end()) {
 							const auto control_character = GetControlCharacter(it->second);
@@ -947,6 +950,11 @@ void TerminalView::Render()
 		ImGui::SetWindowFocus();
 		mScrollToCursor = false;
 	}
+	if (mRevealPosition)
+	{
+		EnsureCoordinateVisible(*mRevealPosition);
+		mRevealPosition.reset();
+	}
 
 	mLastRenderGeometry = thisRenderGeometry;
 }
@@ -1060,6 +1068,23 @@ void TerminalView::SetSelection(const Coordinates & aStart, const Coordinates & 
 	if (mUiState.mSelectionStart != oldSelStart ||
 		mUiState.mSelectionEnd != oldSelEnd)
 		mCursorPositionChanged = true;
+}
+
+void TerminalView::ClearSelection()
+{
+	const Coordinates position = GetActualCursorCoordinates();
+	mUiState.mSelectionStart = position;
+	mUiState.mSelectionEnd = position;
+	mInteractiveStart = position;
+	mInteractiveEnd = position;
+	mCursorPositionChanged = true;
+}
+
+void TerminalView::Reveal(const Coordinates& aPosition)
+{
+	mRevealPosition = SanitizeCoordinates(aPosition);
+	mScrollToCursor = false;
+	mScrollToTop = false;
 }
 
 
@@ -1644,14 +1669,8 @@ float TerminalView::TextDistanceToLineStart(const Coordinates& aFrom) const
 	return distance;
 }
 
-void TerminalView::EnsureCursorVisible()
+void TerminalView::EnsureCoordinateVisible(const Coordinates& aPosition)
 {
-	if (!mWithinRender)
-	{
-		mScrollToCursor = true;
-		return;
-	}
-
 	float scrollX = ImGui::GetScrollX();
 	float scrollY = ImGui::GetScrollY();
 
@@ -1664,7 +1683,7 @@ void TerminalView::EnsureCursorVisible()
 	auto left = (int)ceil(scrollX / mCharAdvance.x);
 	auto right = (int)ceil((scrollX + width) / mCharAdvance.x);
 
-	auto pos = GetActualCursorCoordinates();
+	auto pos = SanitizeCoordinates(aPosition);
 	auto len = TextDistanceToLineStart(pos);
 
 	if (pos.mLine < top)
@@ -1675,6 +1694,17 @@ void TerminalView::EnsureCursorVisible()
 		ImGui::SetScrollX(std::max(0.0f, len + mTextStart - 4));
 	if (len + mTextStart > right - 4)
 		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 - width));
+}
+
+void TerminalView::EnsureCursorVisible()
+{
+	if (!mWithinRender)
+	{
+		mScrollToCursor = true;
+		return;
+	}
+
+	EnsureCoordinateVisible(GetActualCursorCoordinates());
 }
 
 int TerminalView::GetPageSize() const
