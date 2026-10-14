@@ -13,12 +13,21 @@ using namespace std::literals;
 using namespace serial;
 
 #include "imgui.h"
+#include "capture_settings.h"
 #include "toml.hpp"
 
 namespace imterm {
 
 
     void CaptureWindowCreate(void);
+
+    float GetInterfaceZoomFactor();
+
+    void InitializeInterfaceZoom();
+
+    void ApplyPendingInterfaceZoom();
+
+    void QueueInterfaceZoomWheel(float aWheelDelta);
 
     void PortSelectionWindow(ImGuiID id);
 
@@ -346,69 +355,6 @@ namespace imterm {
             } else {
                 throw std::out_of_range("no item is selected");
             }
-        }
-
-    };
-
-    class CaptureSettings {
-
-        static inline const std::string _default_cfg_file_name = "imterm.toml";
-
-        std::string _cfg_file_name;
-        toml::table _table;
-
-        toml::table create_default_toml() {
-            return toml::table {
-                { "default", toml::table {
-                    { "serial", toml::table {
-                        {"serial_port", "COM1"},
-                        { "baud", "115200" },
-                        { "data_bits", "8" },
-                        { "stop_bits", "2" },
-                        { "parity", "none" },
-                        { "flow_control", "none" }
-                    }
-                    },
-                    { "input", toml::table {
-                            {"new_line_mode", "strict"}
-                        }
-                    }
-                }
-                },
-            };
-        }
-
-        void read() {
-            _table = toml::parse_file(_cfg_file_name);            
-        }
-
-        void write(toml::table table) {
-            std::ofstream cfg_stream(_cfg_file_name);
-            if (cfg_stream.is_open()) {
-                cfg_stream << table;
-                cfg_stream.close();
-            }
-        }
-
-    public:
-
-        CaptureSettings(std::string cfg_file_name = _default_cfg_file_name) : _cfg_file_name(cfg_file_name) {
-            if (!std::filesystem::exists(_cfg_file_name)) {
-                auto tbl = create_default_toml();
-                write(tbl);
-            }
-            read();
-        }
-
-        toml::node_view<toml::node> get_serial_settings() {
-            return _table["default"]["serial"];
-        }
-        toml::node_view<toml::node> get_input_settings() {
-            return _table["default"]["input"];
-        }
-
-        void write() {
-            write(_table);
         }
 
     };

@@ -1,8 +1,9 @@
 # Testing imterm
 
-The automated tests exercise `imterm_core` without creating an ImGui context,
-Vulkan device, or serial connection. GoogleTest provides assertions and test
-discovery; CTest is the project-level runner.
+The core tests exercise `imterm_core` without creating an ImGui context.
+The UI tests create a headless ImGui context to check zoom and dialog geometry.
+Neither suite needs a display, Vulkan device, or serial connection. GoogleTest
+provides assertions and test discovery; CTest is the project-level runner.
 
 ## Configure and run
 
@@ -79,6 +80,8 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
   deletion.
 - Terminal-input tests lock down the keyboard sequences sent to the device.
 - Logger tests use unique temporary directories and require no user files.
+- UI zoom tests cover consecutive zoom steps, scrolling near the bottom,
+  and connection-dialog measurements after font and style changes.
 
 The baseline warning policy is `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on
 other compilers for `imterm_core` and its tests. Warnings are not errors yet:

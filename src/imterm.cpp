@@ -373,6 +373,31 @@ static void glfw_framebuffer_size_callback(GLFWwindow*, int width, int height)
         g_SwapChainRebuild = true;
 }
 
+static void glfw_scroll_callback(
+    GLFWwindow* window, double xoffset, double yoffset)
+{
+    const bool mac_shortcuts = ImGui::GetIO().ConfigMacOSXBehaviors;
+    const int shortcut_left = mac_shortcuts
+        ? GLFW_KEY_LEFT_SUPER : GLFW_KEY_LEFT_CONTROL;
+    const int shortcut_right = mac_shortcuts
+        ? GLFW_KEY_RIGHT_SUPER : GLFW_KEY_RIGHT_CONTROL;
+    const int alternate_left = mac_shortcuts
+        ? GLFW_KEY_LEFT_CONTROL : GLFW_KEY_LEFT_ALT;
+    const int alternate_right = mac_shortcuts
+        ? GLFW_KEY_RIGHT_CONTROL : GLFW_KEY_RIGHT_ALT;
+    const bool shortcut_down = glfwGetKey(window, shortcut_left) == GLFW_PRESS
+        || glfwGetKey(window, shortcut_right) == GLFW_PRESS;
+    const bool alternate_down = glfwGetKey(window, alternate_left) == GLFW_PRESS
+        || glfwGetKey(window, alternate_right) == GLFW_PRESS;
+
+    if (shortcut_down && !alternate_down) {
+        imterm::QueueInterfaceZoomWheel(static_cast<float>(yoffset));
+        return;
+    }
+
+    ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+}
+
 static std::filesystem::path GetExecutableDirectory()
 {
 #ifdef _WIN32
@@ -518,8 +543,11 @@ int __stdcall WinMain(
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
+    imterm::InitializeInterfaceZoom();
+
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window, true);
+    glfwSetScrollCallback(window, glfw_scroll_callback);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = g_Instance;
     init_info.PhysicalDevice = g_PhysicalDevice;
@@ -592,6 +620,7 @@ int __stdcall WinMain(
         // Start the Dear ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
+        imterm::ApplyPendingInterfaceZoom();
         ImGui::NewFrame();
 
 #ifdef IMGUI_HAS_VIEWPORT
@@ -600,7 +629,11 @@ int __stdcall WinMain(
         if (once) {
             once = false;
             ImVec2 text_size = ImGui::CalcTextSize(std::string(150, '0').c_str());
-            glfwSetWindowSize(window, text_size.x, text_size.y * 40);
+            const float zoom_factor = imterm::GetInterfaceZoomFactor();
+            glfwSetWindowSize(
+                window,
+                static_cast<int>(text_size.x / zoom_factor),
+                static_cast<int>((text_size.y * 40.0f) / zoom_factor));
         }
 
         ImGui::SetNextWindowPos(viewport->WorkPos);

@@ -157,6 +157,7 @@ namespace imterm {
 
 		bool IsLastLineVisible();
 		const RenderGeometry& GetLastRenderGeometry();
+		void SetTopVisibleLine(int aLine);
 
 		void Copy();
 		void Cut();
@@ -227,6 +228,7 @@ namespace imterm {
 		bool mScrollToCursor;
 		bool mScrollToTop;
 		std::optional<Coordinates> mRevealPosition;
+		std::optional<int> mTopVisibleLine;
 
 		bool mColorizerEnabled;
 		float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the TextEditor.

@@ -15,8 +15,7 @@
 #include "terminal_data.h"
 #include "terminal_input.h"
 
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui.h" // for imGui::GetCurrentWindow()
+#include "imgui_internal.h"
 
 namespace imterm {
 
@@ -432,6 +431,13 @@ void TerminalView::HandleKeyboardInputs()
 	auto shift = io.KeyShift;
 	auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
 	auto alt = io.ConfigMacOSXBehaviors ? io.KeyCtrl : io.KeyAlt;
+	const bool zoomShortcut = ctrl && !alt
+		&& (ImGui::IsKeyPressed(ImGuiKey_Equal)
+			|| ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)
+			|| ImGui::IsKeyPressed(ImGuiKey_Minus)
+			|| ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)
+			|| ImGui::IsKeyPressed(ImGuiKey_0)
+			|| ImGui::IsKeyPressed(ImGuiKey_Keypad0));
 
 	if (ImGui::IsWindowFocused())
 	{
@@ -556,7 +562,7 @@ void TerminalView::HandleKeyboardInputs()
 
 
 
-		if (!io.InputQueueCharacters.empty())
+		if (!zoomShortcut && !io.InputQueueCharacters.empty())
 		{
 			for (auto& elem : io.InputQueueCharacters) {
 				mKeyboardInputQueue.push(std::move(elem));
@@ -672,7 +678,12 @@ void TerminalView::Render()
 
 	assert(mLineBuffer.empty());
 
-	auto contentSize = ImGui::GetWindowContentRegionMax();
+	// Explicit content height is used when restoring the zoom anchor. Measure
+	// the viewport independently so that it does not grow to the buffer height.
+	const auto* window = ImGui::GetCurrentWindow();
+	const ImVec2 contentSize(
+		std::max(0.0f, window->InnerRect.GetWidth() - window->WindowPadding.x * 2.0f),
+		std::max(0.0f, window->InnerRect.GetHeight() - window->WindowPadding.y * 2.0f));
 	auto drawList = ImGui::GetWindowDrawList();
 	float longest(mTextStart);
 
@@ -688,7 +699,7 @@ void TerminalView::Render()
 
 	auto lineNo = (int)floor(scrollY / mCharAdvance.y);
 	auto globalLineMax = (int)mLines.size();
-	auto lineMax = std::max(0, std::min((int)mLines.size() - 1, lineNo + (int)floor((scrollY + contentSize.y) / mCharAdvance.y)));
+	auto lineMax = std::max(0, std::min((int)mLines.size() - 1, (int)floor((scrollY + contentSize.y) / mCharAdvance.y)));
 
 	RenderGeometry thisRenderGeometry;
 	thisRenderGeometry.mCursorScreenPos = cursorScreenPos;
@@ -699,7 +710,7 @@ void TerminalView::Render()
 	thisRenderGeometry.mTotalLines = mLines.size();
 	thisRenderGeometry.mValid = true;
 	thisRenderGeometry.mWindowSize = ImGui::GetWindowSize();
-	thisRenderGeometry.mContentRegionAvail = ImGui::GetContentRegionAvail();
+	thisRenderGeometry.mContentRegionAvail = contentSize;
 
 	const int terminalRows = std::max(
 		static_cast<int>(ceil(
@@ -968,7 +979,25 @@ void TerminalView::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
+	{
+		if (mTopVisibleLine)
+		{
+			const float lineHeight = ImGui::GetTextLineHeightWithSpacing() * mLineSpacing;
+			// BeginChild applies the scroll target before rendering. Supply the
+			// new buffer height too, so zoom-in is not clamped to the old maximum.
+			ImGui::SetNextWindowContentSize(ImVec2(0.0f, mLines.size() * lineHeight));
+			ImGui::SetNextWindowScroll(ImVec2(-1.0f, *mTopVisibleLine * lineHeight));
+			mTopVisibleLine.reset();
+		}
 		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
+	}
+	else if (mTopVisibleLine)
+	{
+		// The caller owns Begin() in this mode, so scrolling takes effect on
+		// its next frame, as with the other scroll requests in that mode.
+		ImGui::SetScrollY(*mTopVisibleLine * ImGui::GetTextLineHeightWithSpacing() * mLineSpacing);
+		mTopVisibleLine.reset();
+	}
 
 	if (mHandleKeyboardInputs)
 	{
@@ -1413,6 +1442,13 @@ bool TerminalView::IsLastLineVisible()
 const TerminalView::RenderGeometry& TerminalView::GetLastRenderGeometry()
 {
 	return mLastRenderGeometry;
+}
+
+void TerminalView::SetTopVisibleLine(int aLine)
+{
+	mTopVisibleLine = std::max(aLine, 0);
+	mScrollToCursor = false;
+	mScrollToTop = false;
 }
 
 

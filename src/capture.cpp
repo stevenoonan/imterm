@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <iomanip>
@@ -15,6 +16,7 @@
 
 #include "imgui.h"
 #include "capture.h"
+#include "connection_dialog_layout.h"
 #include "serial/serial.h"
 #include "terminal_view.h"
 #include "ImGuiFileDialog.h"
@@ -52,6 +54,113 @@ namespace imterm {
     static auto settings = CaptureSettings();
 
     constexpr std::chrono::seconds port_cache_duration = 1s;
+
+    struct InterfaceZoomState {
+        float current = settings.get_zoom_factor();
+        std::optional<float> pending;
+        std::optional<ImGuiStyle> dpi_scaled_base_style;
+        std::optional<int> preserved_top_line;
+        float wheel_accumulator = 0.0f;
+    };
+
+    static InterfaceZoomState interface_zoom;
+
+    float GetInterfaceZoomFactor() {
+        return interface_zoom.pending.value_or(interface_zoom.current);
+    }
+
+    void InitializeInterfaceZoom() {
+        interface_zoom.dpi_scaled_base_style = ImGui::GetStyle();
+        interface_zoom.current = settings.get_zoom_factor();
+        ImGuiStyle& style = ImGui::GetStyle();
+        style = *interface_zoom.dpi_scaled_base_style;
+        style.ScaleAllSizes(interface_zoom.current);
+        style.FontScaleMain = interface_zoom.current;
+    }
+
+    void RequestInterfaceZoom(float factor) {
+        const float normalized = NormalizeInterfaceZoom(factor);
+        if (normalized == GetInterfaceZoomFactor()) {
+            return;
+        }
+
+        if (!interface_zoom.preserved_top_line && term_view) {
+            const auto& geometry = term_view->GetLastRenderGeometry();
+            if (geometry.mValid) {
+                interface_zoom.preserved_top_line = geometry.mFirstVisibleLineNo;
+            }
+        }
+        interface_zoom.pending = normalized;
+        settings.set_zoom_factor(normalized);
+    }
+
+    void ApplyPendingInterfaceZoom() {
+        if (!interface_zoom.pending) {
+            return;
+        }
+        if (!interface_zoom.dpi_scaled_base_style) {
+            InitializeInterfaceZoom();
+        }
+
+        interface_zoom.current = *interface_zoom.pending;
+        interface_zoom.pending.reset();
+        ImGuiStyle& style = ImGui::GetStyle();
+        style = *interface_zoom.dpi_scaled_base_style;
+        style.ScaleAllSizes(interface_zoom.current);
+        style.FontScaleMain = interface_zoom.current;
+
+        if (interface_zoom.preserved_top_line && term_view) {
+            term_view->SetTopVisibleLine(*interface_zoom.preserved_top_line);
+        }
+        interface_zoom.preserved_top_line.reset();
+    }
+
+    void QueueInterfaceZoomWheel(float wheel_delta) {
+        interface_zoom.wheel_accumulator += wheel_delta;
+        float requested = GetInterfaceZoomFactor();
+        while (interface_zoom.wheel_accumulator >= 1.0f) {
+            requested = StepInterfaceZoom(requested, 1);
+            interface_zoom.wheel_accumulator -= 1.0f;
+        }
+        while (interface_zoom.wheel_accumulator <= -1.0f) {
+            requested = StepInterfaceZoom(requested, -1);
+            interface_zoom.wheel_accumulator += 1.0f;
+        }
+        RequestInterfaceZoom(requested);
+    }
+
+    void HandleInterfaceZoomShortcuts() {
+        ImGuiIO& io = ImGui::GetIO();
+        const bool modifier = io.ConfigMacOSXBehaviors
+            ? io.KeySuper : io.KeyCtrl;
+        const bool alt = io.ConfigMacOSXBehaviors
+            ? io.KeyCtrl : io.KeyAlt;
+        if (!modifier || alt) {
+            return;
+        }
+
+        float requested = GetInterfaceZoomFactor();
+        bool keyboard_request = false;
+        if (ImGui::IsKeyPressed(ImGuiKey_Equal)
+            || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) {
+            requested = StepInterfaceZoom(requested, 1);
+            keyboard_request = true;
+        }
+        else if (ImGui::IsKeyPressed(ImGuiKey_Minus)
+            || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) {
+            requested = StepInterfaceZoom(requested, -1);
+            keyboard_request = true;
+        }
+        else if (ImGui::IsKeyPressed(ImGuiKey_0)
+            || ImGui::IsKeyPressed(ImGuiKey_Keypad0)) {
+            requested = DefaultInterfaceZoom;
+            keyboard_request = true;
+        }
+
+        if (keyboard_request) {
+            RequestInterfaceZoom(requested);
+        }
+    }
 
     struct FindState {
         bool open = false;
@@ -252,6 +361,8 @@ namespace imterm {
 
 
         ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar);
+
+        HandleInterfaceZoomShortcuts();
 
         ImGuiIO& io = ImGui::GetIO();
         const bool find_modifier = io.ConfigMacOSXBehaviors
@@ -509,14 +620,46 @@ namespace imterm {
 
                 if (ImGui::BeginMenu("View"))
                 {
-                    auto ops = term_view->GetOptions();
-                    if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
-                        ops.LineNumbers = !ops.LineNumbers;
-                        term_view->SetOptions(ops);
+                    if (ImGui::BeginMenu("Zoom")) {
+                        const bool mac_shortcuts = ImGui::GetIO().ConfigMacOSXBehaviors;
+                        if (ImGui::MenuItem(
+                                "Zoom In", mac_shortcuts ? "Cmd++" : "Ctrl++")) {
+                            RequestInterfaceZoom(StepInterfaceZoom(
+                                GetInterfaceZoomFactor(), 1));
+                        }
+                        if (ImGui::MenuItem(
+                                "Zoom Out", mac_shortcuts ? "Cmd+-" : "Ctrl+-")) {
+                            RequestInterfaceZoom(StepInterfaceZoom(
+                                GetInterfaceZoomFactor(), -1));
+                        }
+                        if (ImGui::MenuItem(
+                                "Reset Zoom", mac_shortcuts ? "Cmd+0" : "Ctrl+0")) {
+                            RequestInterfaceZoom(DefaultInterfaceZoom);
+                        }
+
+                        ImGui::Separator();
+                        const float current_zoom = GetInterfaceZoomFactor();
+                        for (float factor : InterfaceZoomLevels) {
+                            const std::string label = std::to_string(
+                                static_cast<int>(std::lround(factor * 100.0f))) + "%";
+                            if (ImGui::MenuItem(
+                                    label.c_str(), nullptr, current_zoom == factor)) {
+                                RequestInterfaceZoom(factor);
+                            }
+                        }
+                        ImGui::EndMenu();
                     }
-                    if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
-                        ops.TimeStamps = !ops.TimeStamps;
-                        term_view->SetOptions(ops);
+
+                    if (term_view) {
+                        auto ops = term_view->GetOptions();
+                        if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
+                            ops.LineNumbers = !ops.LineNumbers;
+                            term_view->SetOptions(ops);
+                        }
+                        if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
+                            ops.TimeStamps = !ops.TimeStamps;
+                            term_view->SetOptions(ops);
+                        }
                     }
 
                     ImGui::EndMenu();
@@ -686,11 +829,11 @@ namespace imterm {
 
     void PortSelectionWindow(ImGuiID id) {
 
-        static float current_dpi_scale = -1.0f; // make invalid // 96 DPI
-        static float input_x_offset = 200;
-        static float input_width = 200;
-        static float line_height = 50;
-        static float extra_vertical_spacing = 30;
+        const auto layout = MeasureConnectionDialogLayout(4);
+        const float input_x_offset = layout.input_width;
+        const float input_width = layout.input_width;
+        const float line_height = layout.line_height;
+        const float extra_vertical_spacing = layout.extra_vertical_spacing;
 
         static std::vector<serial::PortInfo> port_infos;
 
@@ -720,25 +863,9 @@ namespace imterm {
         ImGuiStyle& style = ImGui::GetStyle();
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         
-        if (current_dpi_scale != viewport->DpiScale) {
-            current_dpi_scale = viewport->DpiScale;
-            ImVec2 text_size = ImGui::CalcTextSize(std::string(20, '0').c_str());
-            input_x_offset = text_size.x;
-            input_width = input_x_offset;
-
-            for (ComboDataBase* comboData : cbo_datas) {
-                comboData->set_input_x_position(input_x_offset);
-                comboData->set_input_width(input_x_offset);
-            }
-            
-            line_height = ImGui::GetFrameHeightWithSpacing();
-            
-            extra_vertical_spacing = 
-                style.PopupBorderSize
-                + (style.ItemSpacing.y * 4)  // 4 calls to ImGui::Spacing()
-                + 1                          // 1 call  to ImGui::Separator();
-                + (style.FramePadding.y * 2) // top and bottom
-                + 1;                         // 1 extra needed at some DPIs
+        for (ComboDataBase* comboData : cbo_datas) {
+            comboData->set_input_x_position(input_x_offset);
+            comboData->set_input_width(input_width);
         }
 
         int lines = 11;
@@ -1002,11 +1129,11 @@ namespace imterm {
 
     void ReconnectionWindow(ImGuiID id) {
 
-        static float current_dpi_scale = -1.0f; // make invalid // 96 DPI
-        static float input_x_offset = 200;
-        static float input_width = 200;
-        static float line_height = 50;
-        static float extra_vertical_spacing = 30;
+        const auto layout = MeasureConnectionDialogLayout(2);
+        const float input_x_offset = layout.input_width;
+        const float input_width = layout.input_width;
+        const float line_height = layout.line_height;
+        const float extra_vertical_spacing = layout.extra_vertical_spacing;
 
         static std::vector<serial::PortInfo> port_infos;
 
@@ -1036,24 +1163,9 @@ namespace imterm {
         ImGuiStyle& style = ImGui::GetStyle();
         ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-        if (current_dpi_scale != viewport->DpiScale) {
-            current_dpi_scale = viewport->DpiScale;
-            ImVec2 text_size = ImGui::CalcTextSize(std::string(20, '0').c_str());
-            input_x_offset = text_size.x;
-            input_width = input_x_offset;
-
-            for (ComboDataBase* comboData : cbo_datas) {
-                comboData->set_input_x_position(input_x_offset);
-                comboData->set_input_width(input_x_offset);
-            }
-
-            line_height = ImGui::GetFrameHeightWithSpacing();
-
-            extra_vertical_spacing =
-                style.PopupBorderSize
-                + (style.ItemSpacing.y * 2)  // 2 calls to ImGui::Spacing()
-                + (style.FramePadding.y * 2) // top and bottom
-                + 1;                         // 1 extra needed at some DPIs
+        for (ComboDataBase* comboData : cbo_datas) {
+            comboData->set_input_x_position(input_x_offset);
+            comboData->set_input_width(input_width);
         }
 
         ImGui::OpenPopup("Reconnecting...");

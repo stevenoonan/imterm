@@ -136,6 +136,8 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/coordinates.h
 	${SRC_DIR}/escape_sequence_parser.cpp
 	${SRC_DIR}/escape_sequence_parser.h
+	${SRC_DIR}/interface_zoom.cpp
+	${SRC_DIR}/interface_zoom.h
 	${SRC_DIR}/terminal_data.cpp
 	${SRC_DIR}/terminal_data.h
 	${SRC_DIR}/terminal_command.cpp
@@ -160,6 +162,8 @@ imterm_enable_sanitizers(imterm_core)
 set(IMTERM_SRCS
 	${SRC_DIR}/capture.cpp
 	${SRC_DIR}/capture.h
+	${SRC_DIR}/capture_settings.h
+	${SRC_DIR}/connection_dialog_layout.h
 	${SRC_DIR}/imterm.cpp
 	${SRC_DIR}/terminal_view.cpp
 	${SRC_DIR}/terminal_view.h
@@ -194,19 +198,40 @@ if(BUILD_TESTING)
 	find_package(GTest CONFIG REQUIRED)
 
 	add_executable(imterm_tests
+		tests/capture_settings_test.cpp
 		tests/escape_sequence_parser_test.cpp
+		tests/interface_zoom_test.cpp
 		tests/terminal_data_test.cpp
 		tests/terminal_command_test.cpp
 		tests/terminal_input_test.cpp
 		tests/terminal_logger_test.cpp
 		tests/terminal_state_test.cpp
 	)
-	target_link_libraries(imterm_tests PRIVATE imterm_core GTest::gtest_main)
+	target_link_libraries(imterm_tests PRIVATE
+		imterm_core
+		GTest::gtest_main
+		tomlplusplus::tomlplusplus
+	)
 	imterm_enable_warnings(imterm_tests)
 	imterm_enable_sanitizers(imterm_tests)
 
 	include(GoogleTest)
 	gtest_discover_tests(imterm_tests DISCOVERY_MODE PRE_TEST)
+
+	# Exercise UI geometry with an ImGui context, without a display or renderer.
+	add_executable(imterm_ui_tests
+		tests/interface_zoom_ui_test.cpp
+		${SRC_DIR}/terminal_view.cpp
+	)
+	target_link_libraries(imterm_ui_tests PRIVATE
+		imterm_core
+		imgui::imgui
+		GTest::gtest_main
+	)
+	target_compile_definitions(imterm_ui_tests PRIVATE ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+	imterm_enable_warnings(imterm_ui_tests)
+	imterm_enable_sanitizers(imterm_ui_tests)
+	gtest_discover_tests(imterm_ui_tests DISCOVERY_MODE PRE_TEST)
 endif()
 
 if(IMTERM_BUILD_FUZZER)
