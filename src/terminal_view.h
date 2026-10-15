@@ -168,13 +168,15 @@ namespace imterm {
 		static const Palette& GetLightPalette();
 		static const Palette& GetRetroBluePalette();
 
+		// Byte strings (including clipboard UTF-8) pass through unchanged.
 		void AddKeyboardInput(std::string input);
-		void AddKeyboardInput(std::u16string input);
+		// ImGui Unicode scalars are encoded once, before entering the byte queue.
+		void AddKeyboardCodePoint(uint32_t input);
 		void AddKeyboardInput(char input);
 		void AddKeyboardInput(const char* input);
 
 
-		ImWchar GetKeyboardInput();
+		uint8_t GetKeyboardInput();
 		bool KeyboardInputAvailable();
 
 		inline Options GetOptions() { return mOptions; }
@@ -254,8 +256,7 @@ namespace imterm {
 		float mLastClick;
 
 		RenderGeometry mLastRenderGeometry;
-		std::queue<ImVector<ImWchar>> mQueuedInputQueueCharacters;
-		std::queue<ImWchar> mKeyboardInputQueue;
+		std::queue<uint8_t> mKeyboardInputQueue;
 
 		//TerminalState& mTermState;
 		std::shared_ptr<TerminalState> mTermState = nullptr;

@@ -8,6 +8,7 @@
 
 namespace imterm {
 
+	// Storage glyphs hold UTF-8 bytes, not Unicode scalars or rendered cells.
 	typedef uint8_t Char;
 
 	enum class PaletteIndex

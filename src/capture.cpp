@@ -19,6 +19,7 @@
 #include "connection_dialog_layout.h"
 #include "serial/serial.h"
 #include "terminal_view.h"
+#include "raw_serial_capture.h"
 #include "ImGuiFileDialog.h"
 
 using namespace std::chrono;
@@ -50,6 +51,54 @@ namespace imterm {
     static std::shared_ptr<TerminalData> term_data(nullptr);
     static std::shared_ptr<TerminalState> term_state(nullptr);
     static std::shared_ptr<TerminalView> term_view(nullptr);
+
+    static RawSerialCapture raw_capture;
+    static ImGuiFileDialog raw_capture_dialog;
+
+    void StopRawCapture() {
+        if (!raw_capture.Stop()) {
+            std::cerr << raw_capture.GetError() << '\n';
+        }
+    }
+
+    static void OpenRawCaptureDialog() {
+        const auto directory = raw_capture.GetPath().empty()
+            ? std::filesystem::current_path()
+            : raw_capture.GetPath().parent_path();
+        raw_capture_dialog.OpenDialog(
+            "RawRxCapture", "Save raw RX capture", ".bin", directory.string(),
+            "raw-rx.bin", 1, nullptr,
+            ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_ConfirmOverwrite);
+    }
+
+    static void ShowRawCaptureDialog() {
+        if (raw_capture_dialog.Display("RawRxCapture", ImGuiWindowFlags_NoCollapse,
+                ImVec2(600, 350))) {
+            if (raw_capture_dialog.IsOk()
+                && !raw_capture.Start(raw_capture_dialog.GetFilePathName())) {
+                std::cerr << raw_capture.GetError() << '\n';
+            }
+            raw_capture_dialog.Close();
+        }
+    }
+
+    static void RawCaptureStatus() {
+        if (raw_capture.IsActive()) {
+            ImGui::Text("Raw RX: %llu bytes | %s",
+                static_cast<unsigned long long>(raw_capture.GetByteCount()),
+                raw_capture.GetPath().filename().string().c_str());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", raw_capture.GetPath().string().c_str());
+            }
+        }
+        if (!raw_capture.GetError().empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                "Raw capture error (hover for details)");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", raw_capture.GetError().c_str());
+            }
+        }
+    }
 
     static auto settings = CaptureSettings();
 
@@ -379,6 +428,8 @@ namespace imterm {
 
         FindBar();
 
+        RawCaptureStatus();
+
         if (term_view && render_view) {
             term_view->Render("TerminalView");
         }
@@ -391,14 +442,15 @@ namespace imterm {
 
         ImGui::End();
 
+        if (serial_init == ConnectionStage::connected) ShowRawCaptureDialog();
+
         if (term_view && term_state) {
             if (serial && serial->isOpen()) {
 
                 try {
 
                     while (term_view->KeyboardInputAvailable()) {
-                        ImWchar keyboard_input_wide = term_view->GetKeyboardInput();
-                        uint8_t keyboard_input = static_cast<uint8_t>(keyboard_input_wide);
+                        uint8_t keyboard_input = term_view->GetKeyboardInput();
                         serial->write(&keyboard_input, 1);
                     }
 
@@ -406,8 +458,13 @@ namespace imterm {
 
                     if (available > 0) {
 
-                        std::vector<uint8_t> buffer(available);
+                        // serial::read(vector, count) appends the bytes read.
+                        std::vector<uint8_t> buffer;
+                        buffer.reserve(available);
                         serial->read(buffer, available);
+                        if (!raw_capture.Append(buffer)) {
+                            std::cerr << raw_capture.GetError() << '\n';
+                        }
                         term_state->Input(buffer);
 
                         if (auto_scroll && !find_state.open) {
@@ -583,6 +640,22 @@ namespace imterm {
             if (ImGui::MenuItem("Find", nullptr, false, term_view != nullptr)) {
                 OpenFind();
             }
+
+            if (ImGui::BeginMenu(raw_capture.IsActive() ? "Raw Capture On" : "Raw Capture")) {
+                if (ImGui::MenuItem("Start...", nullptr, false, !raw_capture.IsActive())) {
+                    OpenRawCaptureDialog();
+                }
+                if (ImGui::MenuItem("Stop", nullptr, false, raw_capture.IsActive())) {
+                    StopRawCapture();
+                }
+                ImGui::Separator();
+                ImGui::TextUnformatted("Received bytes, unchanged. No timestamps or TX.");
+                if (!raw_capture.GetPath().empty()) {
+                    ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
+                    ImGui::TextUnformatted(raw_capture.GetPath().string().c_str());
+                }
+                ImGui::EndMenu();
+            }
             
             if (ImGui::BeginMenu("Options")) {
 
@@ -723,6 +796,7 @@ namespace imterm {
     std::optional<std::string> CloseSerialPort() {
 
         std::optional<std::string> returnValue = std::nullopt;
+        if (term_state) term_state->FinishInput();
 
         try {
 
@@ -868,7 +942,7 @@ namespace imterm {
             comboData->set_input_width(input_width);
         }
 
-        int lines = 11;
+        int lines = raw_capture.GetError().empty() ? 12 : 13;
         if (connection_message != "") {
             lines++;
         }
@@ -1058,6 +1132,20 @@ namespace imterm {
                 // close
                 ImGuiFileDialog::Instance()->Close();
             }
+
+            if (ImGui::Button(raw_capture.IsActive() ? "Stop raw capture" : "Start raw capture...")) {
+                if (raw_capture.IsActive()) StopRawCapture();
+                else OpenRawCaptureDialog();
+            }
+            if (raw_capture.IsActive()) {
+                ImGui::SameLine();
+                ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
+            }
+            if (!raw_capture.GetError().empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Raw capture error");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", raw_capture.GetError().c_str());
+            }
+            ShowRawCaptureDialog();
 
             ImGui::NewLine();
 

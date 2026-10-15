@@ -3,8 +3,24 @@
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 namespace {
+
+	std::pair<size_t, size_t> ScalarRange(
+		const imterm::Line& line, size_t start, size_t end)
+	{
+		start = std::min(start, line.size());
+		end = std::min(std::max(end, start), line.size());
+		if (start == end) return {start, end};
+		while (start > 0 && start < line.size() && (line[start].mChar & 0xC0) == 0x80) {
+			--start;
+		}
+		while (end < line.size() && (line[end].mChar & 0xC0) == 0x80) {
+			++end;
+		}
+		return {start, end};
+	}
 
 	unsigned char FoldAscii(unsigned char aValue)
 	{
@@ -246,8 +262,7 @@ namespace imterm {
 			return;
 		}
 		Line& line = mLines.at(aLineIndex);
-		const size_t start = std::min(aStart, line.mGlyphs.size());
-		const size_t end = std::min(std::max(aEnd, start), line.mGlyphs.size());
+		const auto [start, end] = ScalarRange(line, aStart, aEnd);
 		if (start == end) {
 			return;
 		}
@@ -269,15 +284,19 @@ namespace imterm {
 			return;
 		}
 		Line& line = mLines.at(aLineIndex);
-		const size_t start = std::min(aStart, line.mGlyphs.size());
-		const size_t end = std::min(std::max(aEnd, start), line.mGlyphs.size());
+		const auto [start, end] = ScalarRange(line, aStart, aEnd);
 		if (start == end) {
 			return;
 		}
 
-		for (size_t index = start; index < end; ++index) {
-			line.mGlyphs[index].mChar = ' ';
+		std::vector<Glyph> spaces;
+		for (size_t index = start; index < end; index += UTF8CharLength(line, index)) {
+			spaces.emplace_back(' ', line[index].mColorIndex);
 		}
+		line.mGlyphs.erase(line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(start),
+			line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(end));
+		line.mGlyphs.insert(line.mGlyphs.begin() + static_cast<std::ptrdiff_t>(start),
+			spaces.begin(), spaces.end());
 		if (!mPendingLog) {
 			ResetPendingLog(aLineIndex);
 		}
@@ -324,8 +343,7 @@ namespace imterm {
 		int renderedColumn = 0;
 		for (size_t index = 0; index < line.size();) {
 			const Char character = line[index].mChar;
-			const size_t characterLength = static_cast<size_t>(UTF8CharLength(
-				character, line.size() - index));
+			const size_t characterLength = static_cast<size_t>(UTF8CharLength(line, index));
 			const int nextColumn = character == '\t'
 				? (renderedColumn / mTabSize) * mTabSize + mTabSize
 				: renderedColumn + 1;
@@ -346,8 +364,7 @@ namespace imterm {
 		int renderedColumn = 0;
 		for (size_t index = 0; index < line.size();) {
 			const Char character = line[index].mChar;
-			const size_t characterLength = static_cast<size_t>(UTF8CharLength(
-				character, line.size() - index));
+			const size_t characterLength = static_cast<size_t>(UTF8CharLength(line, index));
 			const int nextColumn = character == '\t'
 				? (renderedColumn / mTabSize) * mTabSize + mTabSize
 				: renderedColumn + 1;
@@ -423,6 +440,9 @@ namespace imterm {
 			return 0;
 		}
 
+		const std::string sanitized = utf8::Sanitize(aValue);
+		aValue = sanitized.c_str();
+		const char* const valueEnd = aValue + sanitized.size();
 		int characterIndex = GetCharacterIndex(aWhere);
 		int totalLines = 0;
 		while (*aValue != '\0') {
@@ -459,7 +479,8 @@ namespace imterm {
 			}
 			else {
 				Line& line = mLines[static_cast<size_t>(aWhere.mLine)];
-				int bytesRemaining = UTF8CharLength(*aValue);
+				int bytesRemaining = static_cast<int>(utf8::Decode(std::string_view(
+					aValue, static_cast<size_t>(valueEnd - aValue))).mLength);
 				while (bytesRemaining-- > 0 && *aValue != '\0') {
 					line.mGlyphs.insert(
 						line.mGlyphs.begin() + characterIndex++,
@@ -482,7 +503,7 @@ namespace imterm {
 		LogPendingLine(true);
 		mLines.clear();
 		mLines.emplace_back();
-		for (const char character : aText) {
+		for (const char character : utf8::Sanitize(aText)) {
 			if (character == '\r') {
 				continue;
 			}
@@ -516,7 +537,7 @@ namespace imterm {
 		for (size_t lineIndex = 0; lineIndex < aLines.size(); ++lineIndex) {
 			Line& line = mLines[lineIndex];
 			line.mGlyphs.reserve(aLines[lineIndex].size());
-			for (const char character : aLines[lineIndex]) {
+			for (const char character : utf8::Sanitize(aLines[lineIndex])) {
 				line.mGlyphs.emplace_back(character, PaletteIndex::Default);
 			}
 			if (!line.mGlyphs.empty()) {
@@ -738,6 +759,20 @@ namespace imterm {
 		if (mReadOnly || aBytes.empty()) {
 			return;
 		}
+		const auto decoded = utf8::Decode(aBytes);
+		if (decoded.mStatus != utf8::Status::Valid || decoded.mLength != aBytes.size()) {
+			const std::string sanitized = utf8::Sanitize(std::string_view(
+				reinterpret_cast<const char*>(aBytes.data()), aBytes.size()));
+			for (size_t offset = 0; offset < sanitized.size();) {
+				const auto scalar = utf8::Decode(std::string_view(sanitized).substr(offset));
+				InputBytes(aLineIndex, aColumnIndex, aPaletteIndex,
+					std::span<const uint8_t>(
+						reinterpret_cast<const uint8_t*>(sanitized.data() + offset),
+						scalar.mLength));
+				offset += scalar.mLength;
+			}
+			return;
+		}
 		Line& line = mLines.at(aLineIndex);
 		aColumnIndex = std::max(aColumnIndex, 0);
 		while (GetLineMaxColumn(static_cast<int>(aLineIndex)) < aColumnIndex) {
@@ -782,8 +817,7 @@ namespace imterm {
 			else {
 				++column;
 			}
-			index += static_cast<size_t>(UTF8CharLength(
-				line[index].mChar, line.size() - index));
+			index += static_cast<size_t>(UTF8CharLength(line, index));
 		}
 		return static_cast<int>(index);
 	}
@@ -799,8 +833,7 @@ namespace imterm {
 		while (index < static_cast<size_t>(std::max(aIndex, 0))
 			&& index < line.size()) {
 			const Char character = line[index].mChar;
-			index += static_cast<size_t>(UTF8CharLength(
-				character, line.size() - index));
+			index += static_cast<size_t>(UTF8CharLength(line, index));
 			if (character == '\t') {
 				column = (column / mTabSize) * mTabSize + mTabSize;
 			}
@@ -819,8 +852,7 @@ namespace imterm {
 		const Line& line = mLines[static_cast<size_t>(aLine)];
 		int count = 0;
 		for (size_t index = 0; index < line.size(); ++count) {
-			index += static_cast<size_t>(UTF8CharLength(
-				line[index].mChar, line.size() - index));
+			index += static_cast<size_t>(UTF8CharLength(line, index));
 		}
 		return count;
 	}
@@ -840,8 +872,7 @@ namespace imterm {
 			else {
 				++column;
 			}
-			index += static_cast<size_t>(UTF8CharLength(
-				character, line.size() - index));
+			index += static_cast<size_t>(UTF8CharLength(line, index));
 		}
 		return column;
 	}

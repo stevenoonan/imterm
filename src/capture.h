@@ -35,6 +35,8 @@ namespace imterm {
 
     std::optional<std::string> CloseSerialPort();
 
+    void StopRawCapture();
+
     void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
         bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
         flowcontrol_t flowcontrol);
@@ -298,7 +300,7 @@ namespace imterm {
 
         size_t set_selected_item(toml::node_view<toml::node> node) {
 
-            std::optional<std::string> value_str = node[_toml_id].value<std::string>();
+            std::optional<std::string> value_str = node[_toml_id].template value<std::string>();
 
             if (value_str.has_value()) {
                 for (int i = 0; i < _items.size(); i++) {

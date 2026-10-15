@@ -711,6 +711,10 @@ int __stdcall WinMain(
             FramePresent(wd);
     }
 
+    // Complete pending UTF-8 before the terminal and logger are destroyed.
+    imterm::CloseSerialPort();
+    imterm::StopRawCapture();
+
     // Cleanup
     err = vkDeviceWaitIdle(g_Device);
     check_vk_result(err);

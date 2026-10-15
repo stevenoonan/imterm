@@ -135,6 +135,8 @@ namespace imterm {
 
     void TerminalState::ClearContents()
     {
+        mPendingUtf8.clear();
+        mAnsiEscSeqParser = EscapeSequenceParser();
         mTerminalData->SetText("");
         mCursorPosition = {};
         mSavedCursorPosition = {};
@@ -476,24 +478,25 @@ namespace imterm {
             }
             else
             {
-                const size_t characterLength = static_cast<size_t>(
-                    TerminalData::UTF8CharLength(value));
-                const size_t remaining = bytes.size() - offset;
-                if (characterLength > remaining) {
+                const auto decoded = utf8::Decode(bytes.subspan(offset));
+                if (decoded.mStatus == utf8::Status::Incomplete) {
                     mPendingUtf8.assign(
-                        bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                        bytes.end());
+                        bytes.begin() + static_cast<std::ptrdiff_t>(offset), bytes.end());
                     break;
                 }
 
-                if (characterLength > 1) {
-                    SanitizeCursorPosition();
-                    const size_t lineIndex = currentLineIndex();
+                if (value >= 0x80) {
+                    // A Unicode scalar (or replacement) ends any malformed CSI.
+                    mAnsiEscSeqParser = EscapeSequenceParser();
+                    const auto replacement = std::span<const uint8_t>(
+                        reinterpret_cast<const uint8_t*>(utf8::Replacement.data()),
+                        utf8::Replacement.size());
                     mTerminalData->InputBytes(
-                        lineIndex, mCursorPosition.mColumn, GetPaletteIndex(),
-                        bytes.subspan(offset, characterLength));
+                        currentLineIndex(), mCursorPosition.mColumn, GetPaletteIndex(),
+                        decoded.mStatus == utf8::Status::Valid
+                            ? bytes.subspan(offset, decoded.mLength) : replacement);
                     SanitizeCursorPosition();
-                    offset += characterLength;
+                    offset += decoded.mLength;
                 }
                 else {
                     const auto& escSeq = mAnsiEscSeqParser.Parse(value);
@@ -515,6 +518,18 @@ namespace imterm {
         }
 
         return totalLines;
+    }
+
+    void TerminalState::FinishInput()
+    {
+        const size_t pending = mPendingUtf8.size();
+        mPendingUtf8.clear();
+        for (size_t i = 0; i < pending; ++i) {
+            Input(std::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(utf8::Replacement.data()),
+                utf8::Replacement.size()));
+        }
+        mAnsiEscSeqParser = EscapeSequenceParser();
     }
 
     PaletteIndex TerminalState::GetPaletteIndex()

@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "terminal_types.h"
+#include "utf8.h"
 #include "coordinates.h"
 #include "terminal_coordinates.h"
 #include "terminal_logger.h"
@@ -75,6 +76,8 @@ namespace imterm {
 			bool aMatchCase) const;
 
 		void InputGlyph(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, uint8_t aValue);
+		// Complete UTF-8 text, replacing malformed bytes. Stream fragments must go
+		// through TerminalState so incomplete scalars can span serial reads.
 		void InputBytes(size_t aLineIndex, int& aColumnIndex, PaletteIndex aPaletteIndex, std::span<const uint8_t> aBytes);
 		void EraseBytes(size_t aLineIndex, size_t aStart, size_t aEnd);
 		void ReplaceBytesWithSpaces(size_t aLineIndex, size_t aStart, size_t aEnd);
@@ -92,28 +95,13 @@ namespace imterm {
 		void SetTabSize(int aValue);
 		inline int GetTabSize() const { return mTabSize; }
 
-		//static int UTF8CharLength(Char c);
-		// https://en.wikipedia.org/wiki/UTF-8
-		// We assume that the char is a standalone character (<128) or a leading byte of an UTF-8 code sequence (non-10xxxxxx code)
-		static int UTF8CharLength(Char c)
+		// Decode through the byte glyph adapter; never infer length from a lead byte.
+		static size_t UTF8CharLength(const Line& aLine, size_t aIndex)
 		{
-			if ((c & 0xFE) == 0xFC)
-				return 6;
-			if ((c & 0xFC) == 0xF8)
-				return 5;
-			if ((c & 0xF8) == 0xF0)
-				return 4;
-			else if ((c & 0xF0) == 0xE0)
-				return 3;
-			else if ((c & 0xE0) == 0xC0)
-				return 2;
-			return 1;
-		}
-
-		static int UTF8CharLength(Char c, size_t available)
-		{
-			return static_cast<int>(std::min(
-				available, static_cast<size_t>(UTF8CharLength(c))));
+			if (aIndex >= aLine.size()) return 0;
+			const auto decoded = utf8::Decode(aLine.size() - aIndex,
+				[&](size_t i) { return aLine[aIndex + i].mChar; });
+			return decoded.mStatus == utf8::Status::Valid ? decoded.mLength : 1;
 		}
 
 

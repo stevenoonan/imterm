@@ -19,6 +19,9 @@
 
 namespace imterm {
 
+static_assert(sizeof(ImWchar) == 4,
+	"Build ImGui and its consumers with IMGUI_USE_WCHAR32 for non-BMP input");
+
 template<class InputIt1, class InputIt2, class BinaryPredicate>
 bool equals(InputIt1 first1, InputIt1 last1,
 	InputIt2 first2, InputIt2 last2, BinaryPredicate p)
@@ -98,44 +101,6 @@ Coordinates TerminalView::SanitizeCoordinates(const Coordinates & aValue) const
 		return Coordinates(line, column);
 	}
 }
-// "Borrowed" from ImGui source
-static inline int ImTextCharToUtf8(char* buf, int buf_size, unsigned int c)
-{
-	if (c < 0x80)
-	{
-		buf[0] = (char)c;
-		return 1;
-	}
-	if (c < 0x800)
-	{
-		if (buf_size < 2) return 0;
-		buf[0] = (char)(0xc0 + (c >> 6));
-		buf[1] = (char)(0x80 + (c & 0x3f));
-		return 2;
-	}
-	if (c >= 0xdc00 && c < 0xe000)
-	{
-		return 0;
-	}
-	if (c >= 0xd800 && c < 0xdc00)
-	{
-		if (buf_size < 4) return 0;
-		buf[0] = (char)(0xf0 + (c >> 18));
-		buf[1] = (char)(0x80 + ((c >> 12) & 0x3f));
-		buf[2] = (char)(0x80 + ((c >> 6) & 0x3f));
-		buf[3] = (char)(0x80 + ((c) & 0x3f));
-		return 4;
-	}
-	//else if (c < 0x10000)
-	{
-		if (buf_size < 3) return 0;
-		buf[0] = (char)(0xe0 + (c >> 12));
-		buf[1] = (char)(0x80 + ((c >> 6) & 0x3f));
-		buf[2] = (char)(0x80 + ((c) & 0x3f));
-		return 3;
-	}
-}
-
 void TerminalView::Advance(Coordinates & aCoordinates) const
 {
 	if (aCoordinates.mLine < (int)mLines.size())
@@ -143,10 +108,10 @@ void TerminalView::Advance(Coordinates & aCoordinates) const
 		auto& line = mLines[aCoordinates.mLine];
 		auto cindex = mData->GetCharacterIndex(aCoordinates);
 
-		if (cindex + 1 < (int)line.size())
+		if (cindex < (int)line.size())
 		{
-			auto delta = TerminalData::UTF8CharLength(line[cindex].mChar);
-			cindex = std::min(cindex + delta, (int)line.size() - 1);
+			auto delta = TerminalData::UTF8CharLength(line, cindex);
+			cindex += static_cast<int>(delta);
 		}
 		else
 		{
@@ -193,7 +158,7 @@ Coordinates TerminalView::ScreenPosToCoordinates(const ImVec2& aPosition) const
 			else
 			{
 				char buf[7];
-				auto d = TerminalData::UTF8CharLength(line[columnIndex].mChar);
+				auto d = TerminalData::UTF8CharLength(line, columnIndex);
 				int i = 0;
 				while (i < 6 && d-- > 0)
 					buf[i++] = line[columnIndex++].mChar;
@@ -261,7 +226,7 @@ Coordinates TerminalView::FindWordEnd(const Coordinates & aFrom) const
 	while (cindex < (int)line.size())
 	{
 		auto c = line[cindex].mChar;
-		auto d = TerminalData::UTF8CharLength(c);
+		auto d = TerminalData::UTF8CharLength(line, cindex);
 		if (cstart != (PaletteIndex)line[cindex].mColorIndex)
 			break;
 
@@ -565,7 +530,7 @@ void TerminalView::HandleKeyboardInputs()
 		if (!zoomShortcut && !io.InputQueueCharacters.empty())
 		{
 			for (auto& elem : io.InputQueueCharacters) {
-				mKeyboardInputQueue.push(std::move(elem));
+				AddKeyboardCodePoint(static_cast<uint32_t>(elem));
 			}
 		}
 
@@ -932,7 +897,7 @@ void TerminalView::Render()
 				}
 				else
 				{
-					size_t l = TerminalData::UTF8CharLength(glyph.mChar);
+					size_t l = TerminalData::UTF8CharLength(line, i);
 					l = std::min(l, (line.size() - i));
 					while (l-- > 0)
 						mLineBuffer.push_back(line[i++].mChar);
@@ -1296,7 +1261,7 @@ void TerminalView::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		}
 		else
 		{
-			cindex += TerminalData::UTF8CharLength(line[cindex].mChar);
+			cindex += TerminalData::UTF8CharLength(line, cindex);
 			mUiState.mCursorPosition = Coordinates(lindex, mData->GetCharacterColumn(lindex, cindex));
 			if (aWordMode)
 				mUiState.mCursorPosition = FindNextWord(mUiState.mCursorPosition);
@@ -1628,10 +1593,8 @@ void TerminalView::AddKeyboardInput(std::string input) {
 }
 
 
-void TerminalView::AddKeyboardInput(std::u16string input) {
-	for (char c : input) {
-		mKeyboardInputQueue.push(c);
-	}
+void TerminalView::AddKeyboardCodePoint(uint32_t input) {
+	AddKeyboardInput(utf8::Encode(input));
 }
 
 void TerminalView::AddKeyboardInput(char input) {
@@ -1645,7 +1608,7 @@ void TerminalView::AddKeyboardInput(const char * input) {
 }
 
 
-ImWchar TerminalView::GetKeyboardInput()
+uint8_t TerminalView::GetKeyboardInput()
 {
 	if (mKeyboardInputQueue.empty()) {
 		throw std::underflow_error("No keyboard input to get. Check KeyboardInputAvailable() before calling.");
@@ -1691,7 +1654,7 @@ float TerminalView::TextDistanceToLineStart(const Coordinates& aFrom) const
 		}
 		else
 		{
-			auto d = TerminalData::UTF8CharLength(line[it].mChar);
+			auto d = TerminalData::UTF8CharLength(line, it);
 			char tempCString[7];
 			int i = 0;
 			for (; i < 6 && d-- > 0 && it < (int)line.size(); i++, it++)

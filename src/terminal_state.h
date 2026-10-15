@@ -106,6 +106,8 @@ namespace imterm {
 		void SetViewportSize(int aRows, int aColumns);
 
 		int Input(std::span<const uint8_t> aBytes);
+		// Finish a disconnected stream, replacing any truncated UTF-8 prefix.
+		void FinishInput();
 
 		ViewportSize GetViewportSize() const { return mViewportSize; }
 		int getColumnIndex() const { return mCursorPosition.mColumn; }

@@ -40,5 +40,43 @@ saved scrollback. Cursor-position reports use one-based screen coordinates.
 Supported formatting attributes are bold, dim, italic, underline, blinking,
 inverse, hidden, and strikethrough, with their standard individual resets.
 Supported colors are the normal foreground and background colors 30–37 and
-40–47 plus default foreground/background reset. Wide characters, combining
-marks, grapheme clusters, and full UTF-8 validation remain deferred.
+40–47 plus default foreground/background reset.
+
+## Text encoding (Milestone 4)
+
+Terminal lines store UTF-8 **bytes**, with color metadata on each byte. A
+Unicode scalar occupies one logical rendered column; tabs expand to tab stops.
+All conversions between byte offsets and columns decode complete scalars.
+Overwriting, erasing, selecting, and copying text preserve scalar boundaries.
+
+Serial input accepts modern one-to-four-byte UTF-8: shortest forms only, no
+surrogates, and no values above U+10FFFF. Each invalid byte is replaced with
+U+FFFD (`EF BF BD`). This same normalized text is rendered, copied, searched,
+and logged; original malformed bytes are not retained. ASCII controls keep
+their existing terminal behavior, including ignoring embedded NUL. A malformed
+UTF-8 prefix never consumes a following ASCII character, control, or escape.
+A Unicode scalar or replacement interrupts an unfinished malformed CSI.
+
+A still-valid incomplete UTF-8 prefix is held across serial reads (at most
+three bytes) and is not displayed until completed. `FinishInput`, called when
+the serial stream closes and on normal application shutdown, emits a replacement
+for each remaining byte and resets escape parsing. Clearing the terminal
+discards any pending prefix and escape sequence. Nonstreaming buffer setters
+and insertion APIs replace malformed and truncated bytes immediately.
+
+ImGui uses `IMGUI_USE_WCHAR32`, consistently in the library, backends, and
+consumers. Each Unicode code point in `InputQueueCharacters` is encoded to UTF-8
+exactly once before entering the `uint8_t` serial queue. Invalid code points
+passed to the encoder become U+FFFD. ASCII keyboard/control sequences keep their
+existing byte values.
+
+Clipboard paste follows a **pass-through UTF-8** policy: clipboard bytes are
+queued unchanged, including malformed UTF-8 and CR/LF, with no second encoding
+or newline conversion. Clipboard APIs provide NUL-terminated text, so paste
+ends at NUL. Copy uses normalized stored UTF-8 and never truncates a scalar.
+
+Wide-character cell widths, combining marks, grapheme-cluster selection,
+bidirectional text, shaping, and font fallback remain deferred. Their scalar
+values are preserved, but each scalar is counted independently as one column.
+The selected font may display a missing-glyph box for unsupported characters;
+copy/paste still preserves their UTF-8 bytes.

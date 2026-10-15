@@ -42,7 +42,7 @@ half-conversion.
 - [X] Milestone 1: Harden the existing input pipeline
 - [X] Milestone 2: Encapsulate the terminal buffer and logging invariants
 - [X] Milestone 3: Correct and isolate terminal protocol semantics
-- [ ] Milestone 4: Define a consistent text-encoding boundary
+- [X] Milestone 4: Define a consistent text-encoding boundary
 - [ ] Milestone 5: Introduce an owned capture session
 - [ ] Milestone 6: Make configuration typed, validated, and reliable
 - [ ] Milestone 7: Split the terminal view into focused components
@@ -261,6 +261,35 @@ on how UTF-8 is represented. ASCII behavior remains unchanged.
 - Incoming UTF-8 renders and copies without out-of-bounds access or truncation.
 - Invalid byte streams follow the documented policy and remain nonfatal.
 - ASCII terminal behavior and performance do not regress noticeably.
+
+### Implementation notes (2026-10-14)
+
+- Encoding and layout policy: [Terminal semantics](docs/terminal-semantics.md#text-encoding-milestone-4).
+  Storage remains UTF-8 bytes; keyboard scalars are encoded once into a byte
+  queue, and clipboard paste passes bytes through unchanged. ImGui uses
+  `IMGUI_USE_WCHAR32` in both dependency build paths.
+- Incoming malformed UTF-8 is normalized to one U+FFFD per invalid byte. Only
+  modern one-to-four-byte scalar encodings are accepted. Valid incomplete
+  prefixes span reads; disconnect/shutdown finishes them with replacements.
+  Clear discards pending input. Copy and logs contain the normalized text.
+- Rendering, selection, cursor movement, overwrite, and byte erasure use whole
+  scalars. Wide-character widths, combining marks, grapheme clusters, shaping,
+  and font fallback remain deferred. Existing ASCII controls are preserved.
+- Validation: clean Linux GCC Debug and Release application builds and 95 tests
+  per configuration; the submodule ImGui Debug build also passes all tests.
+  Clang ASan/UBSan covers the core and headless UI/serial-loopback tests. A
+  61-second libFuzzer run completed 159,454 inputs without a crash.
+- Graphical loopback smoke: setup, ASCII/CRLF/tabs/colors, accented and BMP/non-BMP
+  input, malformed bytes, split reads, keyboard/navigation, scrollback, cursor
+  reports, resize, and normal close were exercised using a local pseudo-terminal.
+  A temporary launch hook opened the PTY, and a temporary modem-ioctl shim allowed
+  the existing status menu to query it. Neither hook is part of the application.
+  Clipboard round trips and normalized log output are covered automatically.
+  Physical modem signals, ESP32 interaction, and Windows execution were not
+  available in this environment.
+- Validation also corrected an existing logger-test callback lifetime and the
+  dependent-template spelling needed by Clang. Serial polling now uses an empty
+  vector because the serial library's vector read overload appends actual bytes.
 
 ## Milestone 5: Introduce an owned capture session
 

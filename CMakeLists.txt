@@ -90,7 +90,7 @@ if (IMGUI_USE_SUBMODULE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/imgui/imgui.cpp")
 	)
 	add_library(imgui::imgui ALIAS imgui)
 	target_include_directories(imgui PUBLIC ${IMGUI_DIR})
-	target_compile_definitions(imgui PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+	target_compile_definitions(imgui PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1 IMGUI_USE_WCHAR32=1)
 	set(IMGUI_SRCS
 		${IMGUI_DIR}/backends/imgui_impl_glfw.cpp 
 		${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp 
@@ -138,6 +138,8 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/escape_sequence_parser.h
 	${SRC_DIR}/interface_zoom.cpp
 	${SRC_DIR}/interface_zoom.h
+	${SRC_DIR}/raw_serial_capture.cpp
+	${SRC_DIR}/raw_serial_capture.h
 	${SRC_DIR}/terminal_data.cpp
 	${SRC_DIR}/terminal_data.h
 	${SRC_DIR}/terminal_command.cpp
@@ -149,6 +151,7 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/terminal_logger.h
 	${SRC_DIR}/terminal_input.cpp
 	${SRC_DIR}/terminal_input.h
+	${SRC_DIR}/utf8.h
 	${SRC_DIR}/terminal_types.h
 )
 
@@ -201,9 +204,11 @@ if(BUILD_TESTING)
 		tests/capture_settings_test.cpp
 		tests/escape_sequence_parser_test.cpp
 		tests/interface_zoom_test.cpp
+		tests/raw_serial_capture_test.cpp
 		tests/terminal_data_test.cpp
 		tests/terminal_command_test.cpp
 		tests/terminal_input_test.cpp
+		tests/utf8_test.cpp
 		tests/terminal_logger_test.cpp
 		tests/terminal_state_test.cpp
 	)
@@ -221,6 +226,7 @@ if(BUILD_TESTING)
 	# Exercise UI geometry with an ImGui context, without a display or renderer.
 	add_executable(imterm_ui_tests
 		tests/interface_zoom_ui_test.cpp
+		tests/terminal_encoding_ui_test.cpp
 		${SRC_DIR}/terminal_view.cpp
 	)
 	target_link_libraries(imterm_ui_tests PRIVATE
@@ -228,6 +234,9 @@ if(BUILD_TESTING)
 		imgui::imgui
 		GTest::gtest_main
 	)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		target_link_libraries(imterm_ui_tests PRIVATE serial)
+	endif()
 	target_compile_definitions(imterm_ui_tests PRIVATE ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
 	imterm_enable_warnings(imterm_ui_tests)
 	imterm_enable_sanitizers(imterm_ui_tests)

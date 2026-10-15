@@ -10,6 +10,7 @@ class ImGuiExample(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     generators = "CMakeDeps", "CMakeToolchain"
     default_options = {
+        "imgui/*:use_wchar32": True,
         "glfw/*:with_wayland": True,
         "glfw/*:with_x11": True,
     }
