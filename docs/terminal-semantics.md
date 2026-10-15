@@ -1,22 +1,20 @@
 # Terminal protocol semantics
 
-The escape-sequence parser is lexical: it recognizes a bounded CSI sequence
-and preserves its identifier, mode, and parameters. `DecodeTerminalCommand`
-then converts valid, supported sequences to typed commands. `TerminalState`
-only applies those typed commands. Unsupported normal, private (`?`), and
-screen (`=`) modes are ignored without changing terminal state.
+imterm supports the ANSI/VT commands listed below. Unsupported commands,
+including private (`?`) and screen (`=`) modes, are ignored without changing
+terminal state.
 
 ## Coordinates
 
 - Screen rows and columns are zero-based positions inside the active viewport.
-- ANSI row and column parameters are one-based and are converted at decode time.
+- ANSI row and column parameters are one-based.
 - Buffer rows address the complete scrollback buffer.
 - Rendered columns count terminal cells, including expanded tab cells.
 - Byte offsets address the UTF-8 byte storage inside one line.
 
-The conversion from a screen position to a scrollback-buffer position is owned
-by `TerminalState`. The renderer supplies viewport row and column counts through
-`SetViewportSize`; line-number and timestamp margins do not alter that size.
+Screen positions refer to the active viewport rather than saved scrollback.
+Line-number and timestamp margins do not alter the terminal's row and column
+bounds.
 
 ## Supported CSI commands
 
@@ -42,33 +40,29 @@ inverse, hidden, and strikethrough, with their standard individual resets.
 Supported colors are the normal foreground and background colors 30–37 and
 40–47 plus default foreground/background reset.
 
-## Text encoding (Milestone 4)
+## Text encoding
 
-Terminal lines store UTF-8 **bytes**, with color metadata on each byte. A
-Unicode scalar occupies one logical rendered column; tabs expand to tab stops.
-All conversions between byte offsets and columns decode complete scalars.
+Terminal text uses UTF-8. A Unicode scalar occupies one logical rendered
+column; tabs expand to tab stops. Byte offsets and columns are distinct.
 Overwriting, erasing, selecting, and copying text preserve scalar boundaries.
 
 Serial input accepts modern one-to-four-byte UTF-8: shortest forms only, no
 surrogates, and no values above U+10FFFF. Each invalid byte is replaced with
 U+FFFD (`EF BF BD`). This same normalized text is rendered, copied, searched,
-and logged; original malformed bytes are not retained. ASCII controls keep
-their existing terminal behavior, including ignoring embedded NUL. A malformed
+and logged. [Raw capture](raw-capture.md) preserves the original bytes.
+Embedded NUL bytes are ignored in the terminal display. A malformed
 UTF-8 prefix never consumes a following ASCII character, control, or escape.
 A Unicode scalar or replacement interrupts an unfinished malformed CSI.
 
 A still-valid incomplete UTF-8 prefix is held across serial reads (at most
-three bytes) and is not displayed until completed. `FinishInput`, called when
-the serial stream closes and on normal application shutdown, emits a replacement
-for each remaining byte and resets escape parsing. Clearing the terminal
-discards any pending prefix and escape sequence. Nonstreaming buffer setters
-and insertion APIs replace malformed and truncated bytes immediately.
+three bytes) and is not displayed until completed. When the serial stream closes
+or the application exits normally, each remaining byte becomes a replacement
+character and escape parsing is reset. Clearing the terminal discards any
+pending prefix and escape sequence.
 
-ImGui uses `IMGUI_USE_WCHAR32`, consistently in the library, backends, and
-consumers. Each Unicode code point in `InputQueueCharacters` is encoded to UTF-8
-exactly once before entering the `uint8_t` serial queue. Invalid code points
-passed to the encoder become U+FFFD. ASCII keyboard/control sequences keep their
-existing byte values.
+Unicode keyboard input is sent as UTF-8, including characters outside the BMP.
+Invalid code points become U+FFFD. ASCII keys and control sequences are sent as
+their corresponding bytes.
 
 Clipboard paste follows a **pass-through UTF-8** policy: clipboard bytes are
 queued unchanged, including malformed UTF-8 and CR/LF, with no second encoding
@@ -76,7 +70,7 @@ or newline conversion. Clipboard APIs provide NUL-terminated text, so paste
 ends at NUL. Copy uses normalized stored UTF-8 and never truncates a scalar.
 
 Wide-character cell widths, combining marks, grapheme-cluster selection,
-bidirectional text, shaping, and font fallback remain deferred. Their scalar
+bidirectional text, shaping, and font fallback are not supported. Their scalar
 values are preserved, but each scalar is counted independently as one column.
 The selected font may display a missing-glyph box for unsupported characters;
 copy/paste still preserves their UTF-8 bytes.

@@ -276,8 +276,6 @@ TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
         {0xC2, 0xA2},
         {0xE2, 0x82, 0xAC},
         {0xF0, 0x9F, 0x98, 0x80},
-        {0xF8, 0x80, 0x80, 0x80, 0x80},
-        {0xFC, 0x80, 0x80, 0x80, 0x80, 0x80},
     };
 
     for (const auto& sequence : sequences) {
@@ -295,6 +293,62 @@ TEST_F(TerminalStateTest, BuffersEveryTruncatedUtf8Prefix)
                 std::string(sequence.begin(), sequence.end())) << "split=" << split;
         }
     }
+}
+
+TEST_F(TerminalStateTest, UnicodeAndMalformedInputAreIndependentOfReadBoundaries)
+{
+    struct Case { std::string bytes; std::string expected; int columns; };
+    const std::string replacement = "\xEF\xBF\xBD";
+    const Case cases[] = {
+        {"ASCII", "ASCII", 5},
+        {"\xC3\xA9\xE6\xBC\xA2\xF0\x9F\x98\x80", "\xC3\xA9\xE6\xBC\xA2\xF0\x9F\x98\x80", 3},
+        {"\xC0\xAF!", replacement + replacement + "!", 3},
+        {"\xE0\x80\x80!", replacement + replacement + replacement + "!", 4},
+        {"\xED\xA0\x80!", replacement + replacement + replacement + "!", 4},
+        {"\xF4\x90\x80\x80!", replacement + replacement + replacement + replacement + "!", 5},
+        {"\xF8\x80\x80\x80\x80!", replacement + replacement + replacement + replacement + replacement + "!", 6},
+        {"\xFF\xFE!", replacement + replacement + "!", 3},
+        {"\xE2\x82!", replacement + replacement + "!", 3},
+        {"\xE2\x82", replacement + replacement, 2},
+        {"\xF0\x9F\x98", replacement + replacement + replacement, 3},
+        {"\xE2\x1B[31mR", replacement + "R", 2},
+        {"\x1B[\xC3\xA9Z", "\xC3\xA9Z", 2},
+    };
+    for (const auto& entry : cases) {
+        const auto bytes = imterm::test::Bytes(entry.bytes);
+        for (size_t split = 0; split <= bytes.size(); ++split) {
+            state->ClearContents();
+            state->Input(std::span(bytes).first(split));
+            state->Input(std::span(bytes).subspan(split));
+            state->FinishInput();
+            EXPECT_EQ(data->GetTextLines(), std::vector<std::string>{entry.expected});
+            EXPECT_EQ(state->getColumnIndex(), entry.columns);
+        }
+        state->ClearContents();
+        for (const auto byte : bytes) state->Input(std::span(&byte, 1));
+        state->FinishInput();
+        EXPECT_EQ(data->GetTextLines(), std::vector<std::string>{entry.expected});
+    }
+}
+
+TEST_F(TerminalStateTest, InvalidUtf8DoesNotConsumeNewlinesOrAscii)
+{
+    state->Input(imterm::test::Bytes("\xE2\x82\nA"));
+    EXPECT_EQ(data->GetTextLines(),
+        std::vector<std::string>({"\xEF\xBF\xBD\xEF\xBF\xBD", "  A"}));
+}
+
+TEST_F(TerminalStateTest, ClearAndDisconnectDoNotRetainPartialUnicode)
+{
+    state->Input(imterm::test::Bytes("\xF0\x9F"));
+    state->ClearContents();
+    state->Input(imterm::test::Bytes("A"));
+    EXPECT_EQ(data->GetTextLines(), std::vector<std::string>{"A"});
+    state->Input(imterm::test::Bytes("\xE2"));
+    state->FinishInput();
+    state->FinishInput();
+    state->Input(imterm::test::Bytes("B"));
+    EXPECT_EQ(data->GetTextLines(), std::vector<std::string>{"A\xEF\xBF\xBD" "B"});
 }
 
 TEST_F(TerminalStateTest, IgnoresUnknownSgrAndCsiCommands)

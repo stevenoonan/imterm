@@ -67,6 +67,69 @@ TEST(TerminalDataTest, DeletesAcrossMultipleLines)
     EXPECT_EQ(data.GetTextLines(), std::vector<std::string>({"ahi"}));
 }
 
+TEST(TerminalDataTest, UnicodeColumnsAndSelectionRemainDistinctFromBytes)
+{
+    imterm::TerminalData data;
+    const std::string text = "A\xC3\xA9\xE6\xBC\xA2\xF0\x9F\x98\x80Z";
+    data.SetText(text);
+    const int offsets[] = {0, 1, 3, 6, 10, 11};
+    for (int column = 0; column <= 5; ++column) {
+        EXPECT_EQ(data.GetCharacterIndex(Coordinates(0, column)), offsets[column]);
+        EXPECT_EQ(data.GetCharacterColumn(0, offsets[column]), column);
+    }
+    EXPECT_EQ(data.GetLineCharacterCount(0), 5);
+    EXPECT_EQ(data.GetLineMaxColumn(0), 5);
+    EXPECT_EQ(data.GetText(Coordinates(0, 1), Coordinates(0, 4)), text.substr(1, 9));
+    data.DeleteRange(Coordinates(0, 1), Coordinates(0, 4));
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{"AZ"});
+}
+
+TEST(TerminalDataTest, AllTextInsertionBoundariesReplaceMalformedUtf8)
+{
+    imterm::TerminalData data;
+    const std::string invalid = "\xC3\xA9\xFF\xE2\x82";
+    const std::string expected = "\xC3\xA9\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD";
+    data.SetText(invalid);
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{expected});
+    data.SetTextLines({invalid});
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{expected});
+    data.SetText("");
+    Coordinates position;
+    data.InsertTextAt(position, invalid.c_str());
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{expected});
+    EXPECT_EQ(position, Coordinates(0, 4));
+    data.SetText("");
+    int column = 0;
+    data.InputBytes(0, column, imterm::PaletteIndex::Red, imterm::test::Bytes(invalid));
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{expected});
+    EXPECT_EQ(column, 4);
+}
+
+TEST(TerminalDataTest, OverwritesWholeUnicodeScalars)
+{
+    imterm::TerminalData data;
+    data.SetText("\xF0\x9F\x98\x80X");
+    int column = 0;
+    data.InputGlyph(0, column, imterm::PaletteIndex::Default, 'A');
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{"AX"});
+    column = 0;
+    data.InputBytes(0, column, imterm::PaletteIndex::Default,
+        imterm::test::Bytes("\xE6\xBC\xA2"));
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{"\xE6\xBC\xA2X"});
+    EXPECT_EQ(column, 1);
+}
+
+TEST(TerminalDataTest, ByteErasureCannotLeavePartialUnicodeScalars)
+{
+    imterm::TerminalData data;
+    data.SetText("A\xF0\x9F\x98\x80Z");
+    data.EraseBytes(0, 2, 3);
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{"AZ"});
+    data.SetText("A\xF0\x9F\x98\x80Z");
+    data.ReplaceBytesWithSpaces(0, 2, 3);
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>{"A Z"});
+}
+
 TEST(TerminalDataTest, FindsNextTextFromAnAnchorAndWraps)
 {
     imterm::TerminalData data;

@@ -1,162 +1,47 @@
 # imterm
-Terminal for UART consoles targeted for embedded systems development.
 
-*  ANSI escape sequence support (colors, cursor position, etc.). ESP32 console features supported.
-*  Infinite scroll back.
-*  Toggle flow control lines (DTR, RTS) and view status of CTS, DSR, and DCD. ESP32s can be reset via RTS toggle.
-*  Lines annotated by number and time. MCUs often don't have a clock to output a timestamp.
-*  Logging to file based on start timestamp and port number.
-*  Auto reconnect: if a serial port goes away, attempt to reconnect automatically (wait for re-enumeration of serial port).
+imterm is a graphical UART terminal for embedded systems development, with
+ESP32-style console input and a supported subset of ANSI/VT commands.
 
-Although there are many programs that can do some mixture of the features I'd like, I have 
-never found one I was satisfied with, so I made my own.
- 
-Future enhancements will contains features that help me develop and debug 
-embedded systems, such as hexadecimal view. A search function is sorely needed.
+- ANSI colors and cursor control, plus console line editing and history keys.
+- Scrollback, text search, selection, and clipboard copy/paste.
+- UTF-8 input and display, with adjustable interface zoom.
+- Optional line numbers and timestamps, text logging, and raw serial-byte capture.
+- Automatic reconnect when a serial device returns.
+- DTR/RTS controls and CTS/DSR/DCD status, where supported by the device.
 
-Serial port is the only interface currently supported. It is a major work in 
-progress, a lot of cleanup and refactoring is currently needed. That being said,
-it currently accomplishes my initial goal of being compatible with ESP32 console
-features (line editing, coloring, history, etc.).
+Written in C++20 using [Dear ImGui](https://github.com/ocornut/imgui), GLFW, and
+Vulkan. Windows and Linux have been tested. Serial ports are the only supported
+transport; the application is still under active development. A Vulkan-capable
+graphics driver is required to run it.
 
-Written in C++20 with multi-platform, hardware accelerated GUI based on [Dear ImGui](https://github.com/ocornut/imgui).
-I have tested it in Windows and Linux. Mac should not be difficult to get 
-working, but overall this codebase is early beta quality.
+An ESP32-C6 console session showing tab completion:
 
-Uses [conan](https://conan.io/) for all build dependencies, and CMake.
-
-The built binary does not have any dependencies.
-
-Submodules are still a part of the repo for `glfw` and `imgui` projects, but the 
-setup of CMakeLists.txt does not currently use them. You do not need to 
-initialize the submodules.
-
-The [terminal view](src/terminal_view.h) is originally based on [ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit).
-
-The currently supported ANSI/VT behavior and coordinate conventions are
-documented in [terminal protocol semantics](docs/terminal-semantics.md).
-
-The below image shows `imterm` connecting to an ESP32 C6 [console](https://github.com/espressif/esp-idf/tree/master/examples/system/console) project.
-Tab completion is shown.
-
-![imterm with esp32 console](resources/images/imterm_v001.gif)
+![imterm with ESP32 console](resources/images/imterm_v001.gif)
 
 ## Building
 
-### Install Conan
+With a C++20 compiler, CMake 3.24 or newer, Conan 2, and a build tool on `PATH`,
+run from the repository root in a Linux/Bash environment:
 
-See https://docs.conan.io/2/installation.html.
-
-### Configure Profile(s)
-Generate a profile, where a C++ 20 compiler must be found:
-```
-conan profile detect
-```
-
-Run `conan profile path default` to find the location of the `default` profile.
-You can save additional profiles in the same location.
-
-### Setup Dependent Packages & Build Presets
-```
+```sh
 ./scripts/bootstrap.sh
-```
-
-The script preserves an existing default Conan profile, installs both Debug and
-Release dependencies, and lets Conan generate the corresponding CMake presets.
-It does not install operating-system packages or invoke `sudo`.
-
-Alternatively, run Conan directly if you need a non-default profile:
-
-```
-conan install . --output-folder=out/conan --build=missing --profile=msvc20-debug
-```
-
-This installs the requirements specified by [conanfile.py](conanfile.py) and
-generates `CMakeUserPresets.json`, referencing the Debug and Release presets
-under `out/conan`. These are CMake configurations specific to your Conan
-profile.
-
-You can run this command whenever you wish, e.g., after cleaning or deleting the
-output / build directory.
-
-### Missing system packages
-If you get something like:
-```
-can't install because tools.system.package_manager:mode is 'check'.
-```
-Install the reported packages with your operating system's package manager. If
-you explicitly want Conan to install them instead, opt in for that invocation:
-
-```
-conan install . --output-folder=out/conan --build=missing \
-  -c tools.system.package_manager:mode=install \
-  -c tools.system.package_manager:sudo=True
-```
-
-### CMake Configure & Build
-
-The result of the `conan install ...` command will tell you how you can call 
-`CMake`.
-
-```
-conanfile.py: Preset 'conan-debug' added to CMakePresets.json. Invoke it manually using 'cmake --preset conan-debug' if using CMake>=3.23
-conanfile.py: If your CMake version is not compatible with CMakePresets (<3.23) call cmake like: 'cmake <path> -G Ninja -DCMAKE_TOOLCHAIN_FILE=out\conan\build\Debug\generators\conan_toolchain.cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_BUILD_TYPE=Debug'
-```
-
-Meaning if you have `CMake 3.23` or later you can just run:
-```
 cmake --preset conan-debug
 cmake --build --preset conan-debug
+./out/conan/build/Debug/imterm
 ```
 
-Otherwise, e.g.:
-```
-mkdir build
-cd build
-cmake .. -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=/home/steve/code/personal/imterm/out/conan/build/Release/generators/conan_toolchain.cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW DCMAKE_BUILD_TYPE=Release
-cmake --build .
-./imterm
-```
-### Visual Studio
-You can create  `msvc20-release` and `msvc20-debug` profiles, e.g.:
+The bootstrap script installs Debug and Release dependencies and generates CMake
+presets. Install any system packages it reports as missing. GLFW and ImGui come
+from Conan by default; their submodules are optional build alternatives.
 
-```
-[settings]
-arch=x86_64
-build_type=Release
-compiler=msvc
-compiler.cppstd=20
-compiler.runtime=dynamic
-compiler.version=193
-os=Windows
+## Documentation
 
-```
+- [Build setup, Windows instructions, and troubleshooting](docs/building.md)
+- [Running tests, sanitizers, and fuzzing](tests/README.md)
+- [Raw capture and serial-output diagnostics](docs/raw-capture.md)
+- [Supported terminal commands and UTF-8 behavior](docs/terminal-semantics.md)
 
-```
-[settings]
-arch=x86_64
-build_type=Debug
-compiler=msvc
-compiler.cppstd=20
-compiler.runtime=dynamic
-compiler.version=193
-os=Windows
-```
-
-### Using Conan, `ninja` With MS VC++
-If you want to force `conan` to use `ninja` instead of `MS Build`, place 
-`*:tools.cmake.cmaketoolchain:generator=Ninja` on a new line in `global.conf`
-(you can find the location of `global.conf` using `conan config path`).
-
-After running `conan install . --output-folder=out/conan --build=missing --profile=msvc20-debug`
-do *not* run `cmake --preset conan-debug` as this can cause `conan` to generate
-a toolchain based on `mingw` or similar.
-
-Instead:
-
- 1. Use `Open Folder` in Visual Studio, 
- 1. `Select Startup Item -> imterm`
- 1. `Project -> Configure imterm`
- 1. Build / run
-
-Visual Studio will configure for `msvc` with `ninja`.
+The terminal view originated from
+[ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit).
+See [LICENSE](LICENSE) for licensing.

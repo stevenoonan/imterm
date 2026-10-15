@@ -264,7 +264,7 @@ on how UTF-8 is represented. ASCII behavior remains unchanged.
 
 ### Implementation notes (2026-10-14)
 
-- Encoding and layout policy: [Terminal semantics](docs/terminal-semantics.md#text-encoding-milestone-4).
+- Encoding and layout policy: [Terminal semantics](docs/terminal-semantics.md#text-encoding).
   Storage remains UTF-8 bytes; keyboard scalars are encoded once into a byte
   queue, and clipboard paste passes bytes through unchanged. ImGui uses
   `IMGUI_USE_WCHAR32` in both dependency build paths.

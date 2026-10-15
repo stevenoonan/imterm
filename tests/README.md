@@ -4,6 +4,8 @@ The core tests exercise `imterm_core` without creating an ImGui context.
 The UI tests create a headless ImGui context to check zoom and dialog geometry.
 Neither suite needs a display, Vulkan device, or serial connection. GoogleTest
 provides assertions and test discovery; CTest is the project-level runner.
+On Linux, the encoding UI suite also opens a local pseudo-terminal to check
+serial byte round trips; it needs `/dev/ptmx`, but no serial hardware.
 
 ## Configure and run
 
@@ -12,6 +14,10 @@ Install Debug and Release dependencies after changing `conanfile.py`:
 ```sh
 PATH="$PWD/.venv/bin:$PATH" ./scripts/bootstrap.sh
 ```
+
+ImGui must be built with `use_wchar32=True`, as configured in `conanfile.py`.
+The submodule build applies `IMGUI_USE_WCHAR32` to ImGui and
+its consumers too. Defining it only on the application causes an ABI mismatch.
 
 The test wrapper configures, builds, and runs Debug tests by default:
 
@@ -73,19 +79,22 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
 
 ## Test categories
 
-- Parser tests characterize byte-by-byte escape-sequence parsing.
+- Parser tests cover byte-by-byte escape-sequence parsing.
 - Terminal-state tests cover text input, newline modes, chunked sequences,
   colors, cursor movement, erasure, scrollback, and terminal responses.
 - Terminal-data tests cover buffer text, coordinates, tabs, insertion, and
   deletion.
 - Terminal-input tests lock down the keyboard sequences sent to the device.
+- UTF-8 tests cover scalar boundaries, malformed encodings, and truncated prefixes.
+- Encoding UI tests exercise ImGui code points, pass-through paste, Unicode
+  selection/copy, invalid-byte rendering, and Linux pseudo-terminal loopback
+  with single-byte serial reads.
 - Logger tests use unique temporary directories and require no user files.
+- Raw-capture tests verify all 256 byte values, split reads, exact ANSI and
+  malformed UTF-8 retention before parsing, start/stop behavior, and disk errors.
 - UI zoom tests cover consecutive zoom steps, scrolling near the bottom,
   and connection-dialog measurements after font and style changes.
 
-The baseline warning policy is `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on
-other compilers for `imterm_core` and its tests. Warnings are not errors yet:
-the terminal core still has known signed/unsigned and API warnings that later
-milestones will remove. The application target also compiles third-party ImGui
-backend sources directly, so its warning isolation is deferred until those
-sources have their own target.
+Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on other compilers
+for `imterm_core` and its tests. They are enabled by default and can be controlled
+with `IMTERM_ENABLE_WARNINGS`. Warnings are not treated as errors.

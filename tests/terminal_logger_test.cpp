@@ -30,6 +30,25 @@ TEST(TerminalLoggerTest, WritesConfiguredLineFormat)
         "7 ok\n");
 }
 
+TEST(TerminalLoggerTest, LogsNormalizedUtf8IncludingTruncatedStreamEnd)
+{
+    imterm::test::TemporaryDirectory directory;
+    imterm::TerminalLogger::Options options;
+    options.Enabled = true;
+    options.LineNumbers = false;
+    options.TimeStamps = false;
+    auto logger = std::make_shared<imterm::TerminalLogger>(
+        false, "unicode", ".log", directory.Path(), options);
+    auto data = std::make_shared<imterm::TerminalData>(logger);
+    imterm::TerminalState state(data, imterm::TerminalState::NewLineMode::AddCrToLf);
+    state.SetViewportSize(1, 80);
+    state.Input(imterm::test::Bytes("\xC3\xA9\xF0\x9F\x98\x80\xFF\n\xE2\x82"));
+    state.FinishInput();
+    logger->Close();
+    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "unicode.log"),
+        "\xC3\xA9\xF0\x9F\x98\x80\xEF\xBF\xBD\n\xEF\xBF\xBD\xEF\xBF\xBD\n");
+}
+
 TEST(TerminalLoggerTest, ClosingFlushesAnIncompleteTerminalLine)
 {
     imterm::test::TemporaryDirectory directory;
@@ -150,9 +169,10 @@ TEST(TerminalLoggerTest, RegistrationTokensIdentifyIndividualWatchers)
 {
     imterm::TerminalLogger::Options options;
     options.Enabled = false;
-    imterm::TerminalLogger logger(options);
     int firstCalls = 0;
     int secondCalls = 0;
+    // Close also runs from the logger destructor; callbacks must outlive it.
+    imterm::TerminalLogger logger(options);
     const auto first = logger.RegisterLogClosingWatcher(
         [&firstCalls] { ++firstCalls; });
     logger.RegisterLogClosingWatcher([&secondCalls] { ++secondCalls; });
