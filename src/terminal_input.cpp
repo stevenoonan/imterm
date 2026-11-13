@@ -43,4 +43,43 @@ std::optional<char> GetControlCharacter(char ascii_character)
     return std::nullopt;
 }
 
+KeyResult ResolveTerminalKey(ViewKey key, KeyModifiers modifiers, char letter)
+{
+    const auto [shortcut, shift, alternate] = modifiers;
+    if (alternate) return {};
+    const auto send = [](TerminalKey value) {
+        return KeyResult{KeyAction::Send, std::string(GetTerminalKeySequence(value))};
+    };
+    switch (key) {
+    case ViewKey::Letter:
+        if (!shortcut) return {};
+        if (letter >= 'A' && letter <= 'Z') letter = static_cast<char>(letter - 'A' + 'a');
+        if (letter == 'f') return {}; // Capture owns Find, including its modifiers.
+        if (!shift) {
+            if (letter == 'v') return {KeyAction::Paste, {}};
+            if (letter == 'a') return {KeyAction::SelectAll, {}};
+        }
+        if (const auto control = GetControlCharacter(letter)) return {KeyAction::Send, std::string(1, *control)};
+        return {};
+    case ViewKey::Insert:
+        if (shortcut && !shift) return {KeyAction::Copy, {}};
+        if (!shortcut && shift) return {KeyAction::Paste, {}};
+        return {};
+    case ViewKey::Delete: return !shortcut && !shift ? send(TerminalKey::Delete) : KeyResult{};
+    case ViewKey::Backspace: return !shortcut && !shift ? send(TerminalKey::Backspace) : KeyResult{};
+    case ViewKey::Enter: return !shortcut && !shift ? send(TerminalKey::Enter) : KeyResult{};
+    case ViewKey::Tab: return !shortcut ? send(TerminalKey::Tab) : KeyResult{};
+    case ViewKey::Up: return !shortcut ? send(TerminalKey::Up) : KeyResult{};
+    case ViewKey::Down: return !shortcut ? send(TerminalKey::Down) : KeyResult{};
+    case ViewKey::Left: return send(TerminalKey::Left);
+    case ViewKey::Right: return send(TerminalKey::Right);
+    case ViewKey::PageUp: return {KeyAction::PageUp, {}};
+    case ViewKey::PageDown: return {KeyAction::PageDown, {}};
+    case ViewKey::Home: return shortcut ? KeyResult{KeyAction::Top, {}} : send(TerminalKey::Home);
+    case ViewKey::End: return shortcut ? KeyResult{KeyAction::Bottom, {}} : send(TerminalKey::End);
+    case ViewKey::Zoom: return {}; // Capture owns interface zoom.
+    }
+    return {};
+}
+
 } // namespace imterm

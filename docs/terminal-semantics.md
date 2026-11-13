@@ -74,3 +74,8 @@ bidirectional text, shaping, and font fallback are not supported. Their scalar
 values are preserved, but each scalar is counted independently as one column.
 The selected font may display a missing-glyph box for unsupported characters;
 copy/paste still preserves their UTF-8 bytes.
+
+Stored tabs render, select, and hit-test at expanded tab stops. The serial receive
+path currently advances its cursor by one column after storing a tab, so text
+following a received tab can overwrite the wrong cells. This pre-existing
+protocol issue is separate from the view components and remains a follow-up.

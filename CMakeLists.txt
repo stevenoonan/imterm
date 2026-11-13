@@ -151,6 +151,12 @@ set(IMTERM_CORE_SRCS
 	${SRC_DIR}/terminal_logger.h
 	${SRC_DIR}/terminal_input.cpp
 	${SRC_DIR}/terminal_input.h
+	${SRC_DIR}/terminal_selection.cpp
+	${SRC_DIR}/terminal_selection.h
+	${SRC_DIR}/terminal_viewport.cpp
+	${SRC_DIR}/terminal_viewport.h
+	${SRC_DIR}/terminal_palette.cpp
+	${SRC_DIR}/terminal_palette.h
 	${SRC_DIR}/utf8.h
 	${SRC_DIR}/terminal_types.h
 )
@@ -174,6 +180,19 @@ target_link_libraries(imterm_session PUBLIC imterm_core PRIVATE serial Threads::
 imterm_enable_warnings(imterm_session)
 imterm_enable_sanitizers(imterm_session)
 
+add_library(imterm_view STATIC
+	${SRC_DIR}/terminal_view.cpp
+	${SRC_DIR}/terminal_view.h
+	${SRC_DIR}/terminal_renderer.cpp
+	${SRC_DIR}/terminal_renderer.h
+	${SRC_DIR}/terminal_keyboard.cpp
+	${SRC_DIR}/terminal_keyboard.h
+)
+target_link_libraries(imterm_view PUBLIC imterm_core imgui::imgui)
+target_compile_definitions(imterm_view PUBLIC ImTextureID=ImU64 IMGUI_DISABLE_OBSOLETE_KEYIO=1)
+imterm_enable_warnings(imterm_view)
+imterm_enable_sanitizers(imterm_view)
+
 # Main application
 set(IMTERM_SRCS
 	${SRC_DIR}/capture.cpp
@@ -181,8 +200,6 @@ set(IMTERM_SRCS
 	${SRC_DIR}/capture_settings.h
 	${SRC_DIR}/connection_dialog_layout.h
 	${SRC_DIR}/imterm.cpp
-	${SRC_DIR}/terminal_view.cpp
-	${SRC_DIR}/terminal_view.h
 )
 
 add_executable(imterm WIN32 
@@ -194,6 +211,7 @@ target_link_libraries(
 	imterm
 	imterm_core
 	imterm_session
+	imterm_view
 	serial
 	beep
 	imgui::imgui
@@ -223,6 +241,7 @@ if(BUILD_TESTING)
 		tests/terminal_data_test.cpp
 		tests/terminal_command_test.cpp
 		tests/terminal_input_test.cpp
+		tests/terminal_selection_test.cpp
 		tests/utf8_test.cpp
 		tests/terminal_logger_test.cpp
 		tests/terminal_state_test.cpp
@@ -239,17 +258,18 @@ if(BUILD_TESTING)
 	include(GoogleTest)
 	gtest_discover_tests(imterm_tests DISCOVERY_MODE PRE_TEST)
 
-	# Exercise UI geometry with an ImGui context, without a display or renderer.
+	# Exercise UI layout and draw state without a display or renderer backend.
 	add_executable(imterm_ui_tests
 		tests/capture_ui_test.cpp
 		tests/interface_zoom_ui_test.cpp
 		tests/terminal_encoding_ui_test.cpp
+		tests/terminal_view_ui_test.cpp
 		${SRC_DIR}/capture.cpp
-		${SRC_DIR}/terminal_view.cpp
 	)
 	target_link_libraries(imterm_ui_tests PRIVATE
 		imterm_core
 		imterm_session
+		imterm_view
 		imgui::imgui
 		GTest::gtest_main
 		tomlplusplus::tomlplusplus

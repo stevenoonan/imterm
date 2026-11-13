@@ -38,7 +38,7 @@ namespace imterm {
 		explicit TerminalData(std::shared_ptr<TerminalLogger> aLogger);
 		~TerminalData();
 
-		// Temporary read-only adapter used by TerminalView during the refactor.
+		// Read-only text boundary shared by layout, selection, and rendering.
 		const Lines& GetLines() const noexcept { return mLines; }
 		const Line& GetLine(size_t aIndex) const { return mLines.at(aIndex); }
 		size_t GetLineCount() const noexcept { return mLines.size(); }

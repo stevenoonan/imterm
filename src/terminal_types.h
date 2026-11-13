@@ -14,22 +14,9 @@ namespace imterm {
 	enum class PaletteIndex
 	{
 		Default,
-		Keyword,
-		Number,
-		String,
-		CharLiteral,
-		Punctuation,
-		Preprocessor,
-		Identifier,
-		KnownIdentifier,
-		PreprocIdentifier,
-		Comment,
-		MultiLineComment,
 		Background,
 		Cursor,
 		Selection,
-		ErrorMarker,
-		Breakpoint,
 		LineNumber,
 		CurrentLineFill,
 		CurrentLineFillInactive,
@@ -58,9 +45,8 @@ namespace imterm {
 		Char mChar;
 		PaletteIndex mColorIndex = PaletteIndex::Default;
 
-		bool mPreprocessor : 1;
 
-		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex), mPreprocessor(false) {}
+		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex) {}
 	};
 
 	// A line's timestamp is the time of its most recent content mutation. This

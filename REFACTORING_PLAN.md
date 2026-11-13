@@ -45,7 +45,7 @@ half-conversion.
 - [X] Milestone 4: Define a consistent text-encoding boundary
 - [X] Milestone 5: Introduce an owned capture session
 - [X] Milestone 6: Make configuration typed, validated, and reliable
-- [ ] Milestone 7: Split the terminal view into focused components
+- [X] Milestone 7: Split the terminal view into focused components
 - [ ] Milestone 8: Encapsulate application/platform startup and finish cleanup
 
 ## Milestone 0: Establish the safety net
@@ -499,6 +499,58 @@ independently. The visible terminal remains functionally equivalent.
 - Line numbers, timestamps, color, cursor, selection, scrolling, clipboard, and
   DPI behavior pass the smoke checklist.
 - Unused editor APIs and dead members are removed or explicitly justified.
+
+### Implementation notes (2026-11-12)
+
+- [Terminal view components](docs/terminal-view.md) documents the module
+  boundaries, selection/input rules, geometry, retained APIs, and smoke list.
+  `TerminalView` is now a small coordinating adapter; `imterm_view` builds its
+  ImGui renderer/keyboard adapter once for the application and UI tests.
+- `TerminalSelection`, viewport calculations, keyboard policy, and palette data
+  are independent of ImGui and build with the core. Selection reads const
+  terminal data, handles Unicode/tab boundaries and anchored/reversed word/line
+  dragging, and keeps the UI caret independent of the device cursor. ANSI color
+  changes no longer split words. Clipboard text extraction is part of this
+  model; only clipboard platform calls remain in the view adapter.
+- Layout returns a complete geometry snapshot before interaction. Drawing uses
+  separate margin, selection, cursor, and text passes and reports draw-state
+  counts. Hit testing, page size, and margins use current-frame font/scroll
+  measurements. First-frame zoom anchors remain covered. Hidden margins no
+  longer read an uninitialized text buffer, and the initial background is
+  defined before painting. Device cursor blink uses monotonic time.
+- Removed copied editor identifiers/regexes, breakpoints/error markers, editing
+  and incomplete APIs, stale render/cursor-change state, syntax palette roles,
+  and the preprocessor glyph bit. The remaining byte queue is outbound terminal
+  input; read-only navigation, themes, whitespace visualization, and embedding
+  without a child window are intentional supported view primitives.
+- One key resolves to one action. Ctrl/Cmd+V and A do not also send control
+  bytes, Ctrl/Cmd+Z is no longer excluded from alphabetic mapping, Find/zoom
+  remain controller-owned, and Ctrl/Cmd+C still sends the device interrupt.
+  AltGr text survives Ctrl+Alt reporting without an extra alphabetic control
+  byte. Mouse/keyboard enable getters now report their respective flags.
+- Validation: clean Linux GCC Debug/Release builds in `out/milestone7-*`;
+  all 173 tests pass in each configuration. Clang ASan/UBSan with leak detection
+  passes the same suite outside the tracing wrapper. New tests cover the pure
+  selection/navigation/palette/key policies plus actual ImGui input events,
+  clipboard actions, current-frame hit testing at several scales, independent
+  UI/device cursors, complete layout snapshots, margin toggles, color/selection
+  passes, and deterministic cursor focus/blink states. New view sources build
+  without warnings; existing settings-test/third-party warnings remain.
+- Native PTY smoke exercised RX, Unicode clipboard byte round trips, Ctrl+Z,
+  scrolling to the end, and normal shutdown at 100%, 125%, 150%, and 200% scale.
+  CPU-rendered captures of actual ImGui draw data were manually compared for
+  margins, timestamps, ANSI colors, selection, text, scrollbars, and cursor.
+  The Vulkan application additionally launched at 150%, connected through Setup
+  to a PTY, received/logged colored UTF-8 text, and closed with exit 0. Temporary
+  smoke drivers/captures are outside tracked sources; no product launch hook or
+  renderer-backend change is included. Physical hardware and Windows execution
+  remain unavailable.
+- Follow-up observed during smoke: the existing receive path advances by one
+  cell after storing a tab, so subsequent serial text can overwrite expanded
+  tab cells. Core receive/write implementation is unchanged by M7; the view's
+  stored-tab rendering/selection/hit testing is covered independently. This
+  pre-existing protocol limitation is now explicit in
+  [terminal semantics](docs/terminal-semantics.md).
 
 ## Milestone 8: Encapsulate application/platform startup and finish cleanup
 

@@ -43,6 +43,7 @@ from Conan by default; their submodules are optional build alternatives.
 - [Supported terminal commands and UTF-8 behavior](docs/terminal-semantics.md)
 - [Capture session ownership, connection states, and I/O](docs/capture-session.md)
 - [Settings format, validation, and recovery](docs/configuration.md)
+- [Terminal view components, input, and selection](docs/terminal-view.md)
 
 The terminal view originated from
 [ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit).

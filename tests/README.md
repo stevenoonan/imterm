@@ -85,6 +85,10 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
 - Terminal-data tests cover buffer text, coordinates, tabs, insertion, and
   deletion.
 - Terminal-input tests lock down the keyboard sequences sent to the device.
+- Selection/view-model tests cover Unicode and tab boundaries, reverse and
+  word/line dragging, selection anchors, multiline spans, preferred columns,
+  shortened buffers, viewport visibility/reveal calculations, and theme colors
+  without ImGui. Keyboard policy tests cover shortcut precedence and modifiers.
 - UTF-8 tests cover scalar boundaries, malformed encodings, and truncated prefixes.
 - Encoding UI tests exercise ImGui code points, pass-through paste, Unicode
   selection/copy, invalid-byte rendering, and Linux pseudo-terminal loopback
@@ -107,7 +111,11 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
   malformed UTF-8 retention before parsing, start/stop behavior, and disk errors.
 - UI zoom tests cover consecutive zoom steps, scrolling near the bottom,
   and connection-dialog measurements after font and style changes.
+- Terminal-view UI tests check complete layout snapshots, current-frame
+  hit testing at several scales, margin toggles, independent UI/device cursors,
+  actual keyboard/mouse events, clipboard actions, selection/color draw passes,
+  cursor blink/focus states, and independent mouse/keyboard enable flags.
 
 Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on other compilers
-for `imterm_core`, `imterm_session`, and their tests. They are enabled by default and can be controlled
+for `imterm_core`, `imterm_session`, `imterm_view`, and their tests. They are enabled by default and can be controlled
 with `IMTERM_ENABLE_WARNINGS`. Warnings are not treated as errors.

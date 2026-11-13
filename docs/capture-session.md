@@ -7,6 +7,8 @@ connection state, and an I/O worker. The terminal objects exist before connectin
 so menus can safely use them in every connection state.
 The existing core/view APIs share lifetime references to data, state, and logger;
 the controller and session determine when those objects are replaced and closed.
+The [view components](terminal-view.md) separate read-only selection/navigation,
+input policy, theme data, layout, and drawing from those session responsibilities.
 
 `imterm_core` remains independent of the serial library and ImGui.
 `imterm_session` adds session behavior, typed configuration, and the
