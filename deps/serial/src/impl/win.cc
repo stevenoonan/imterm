@@ -95,7 +95,15 @@ Serial::SerialImpl::open ()
     }
   }
 
-  reconfigurePort();
+  try {
+    reconfigurePort();
+  } catch (...) {
+    // close() only releases fully open ports. A configuration failure still
+    // owns the handle returned by CreateFileW.
+    CloseHandle(fd_);
+    fd_ = INVALID_HANDLE_VALUE;
+    throw;
+  }
   is_open_ = true;
 }
 

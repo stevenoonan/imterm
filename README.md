@@ -41,6 +41,7 @@ from Conan by default; their submodules are optional build alternatives.
 - [Running tests, sanitizers, and fuzzing](tests/README.md)
 - [Raw capture and serial-output diagnostics](docs/raw-capture.md)
 - [Supported terminal commands and UTF-8 behavior](docs/terminal-semantics.md)
+- [Capture session ownership, connection states, and I/O](docs/capture-session.md)
 
 The terminal view originated from
 [ImGuiColorTextEdit](https://github.com/BalazsJako/ImGuiColorTextEdit).

@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include "serial/serial.h"
 
 using namespace std::chrono;
@@ -14,34 +15,30 @@ using namespace serial;
 
 #include "imgui.h"
 #include "capture_settings.h"
+#include "capture_session.h"
 #include "toml.hpp"
 
 namespace imterm {
 
 
-    void CaptureWindowCreate(void);
-
-    float GetInterfaceZoomFactor();
-
-    void InitializeInterfaceZoom();
-
-    void ApplyPendingInterfaceZoom();
-
-    void QueueInterfaceZoomWheel(float aWheelDelta);
-
-    void PortSelectionWindow(ImGuiID id);
-
-    void ReconnectionWindow(ImGuiID id);
-
-    std::optional<std::string> CloseSerialPort();
-
-    void StopRawCapture();
-
-    void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
-        bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
-        flowcontrol_t flowcontrol);
-
-    void Menu();
+    class Capture {
+    public:
+        explicit Capture(CaptureSession::TransportFactory transportFactory = MakeSerialTransport);
+        ~Capture();
+        Capture(const Capture&) = delete;
+        Capture& operator=(const Capture&) = delete;
+        void Render();
+        void Update();
+        void Shutdown();
+        CaptureSession& GetSession();
+        float GetInterfaceZoomFactor();
+        void InitializeInterfaceZoom();
+        void ApplyPendingInterfaceZoom();
+        void QueueInterfaceZoomWheel(float delta);
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> mImpl;
+    };
 
     template<typename T>
     class ComboDataItem {

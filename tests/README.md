@@ -90,11 +90,17 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
   selection/copy, invalid-byte rendering, and Linux pseudo-terminal loopback
   with single-byte serial reads.
 - Logger tests use unique temporary directories and require no user files.
+- Capture-session tests cover open/read/write failures, short writes, retry
+  timing, cancellation, repeated reconfiguration, modem controls, log/raw flush,
+  and deterministic worker shutdown. Linux PTY tests exercise native hangup and
+  reconnection, port cycles, and partial-open descriptor cleanup.
+- Capture UI tests render setup, connecting, connected, reconnecting, cancelled,
+  and failed states in a headless ImGui context and check modal dismissal.
 - Raw-capture tests verify all 256 byte values, split reads, exact ANSI and
   malformed UTF-8 retention before parsing, start/stop behavior, and disk errors.
 - UI zoom tests cover consecutive zoom steps, scrolling near the bottom,
   and connection-dialog measurements after font and style changes.
 
 Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on other compilers
-for `imterm_core` and its tests. They are enabled by default and can be controlled
+for `imterm_core`, `imterm_session`, and their tests. They are enabled by default and can be controlled
 with `IMTERM_ENABLE_WARNINGS`. Warnings are not treated as errors.

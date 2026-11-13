@@ -19,7 +19,7 @@
 #include "connection_dialog_layout.h"
 #include "serial/serial.h"
 #include "terminal_view.h"
-#include "raw_serial_capture.h"
+#include "capture_session.h"
 #include "ImGuiFileDialog.h"
 
 using namespace std::chrono;
@@ -30,30 +30,40 @@ using namespace std::literals;
 
 namespace imterm {
 
-    enum class ConnectionStage {
-        not_connected = 0,
-        connected = 1,
-        reconnecting = 2,
-        reconfiguring = 3
-    };
+struct Capture::Impl {
+    CaptureSession session;
+    std::shared_ptr<TerminalData> term_data = session.GetData();
+    std::shared_ptr<TerminalState> term_state = session.GetTerminalState();
+    TerminalLogger* term_log = &session.GetLogger();
+    std::unique_ptr<TerminalView> term_view = std::make_unique<TerminalView>(
+        term_data, term_state, TerminalView::Options());
+    RawSerialCapture& raw_capture = session.GetRawCapture();
+    ImGuiFileDialog raw_capture_dialog;
+    CaptureSettings settings;
+    bool enable_logging = false;
+    bool& auto_scroll = session.autoScroll;
+    std::string serial_name = "[Not Connected]";
+    bool setup_saved = false;
 
-    static ConnectionStage serial_init = ConnectionStage::not_connected;
-    static Serial * serial;
-    static std::string serial_name = "[Not Connected]";
-    static std::string connection_message = "";
-    static std::string capture_error_message = "";
-    static bool auto_reconnect = true;
-    static bool render_view = false;
-    static bool enable_logging = false;
-    static bool auto_scroll = true;
-    
-    static std::shared_ptr<TerminalLogger> term_log(nullptr);
-    static std::shared_ptr<TerminalData> term_data(nullptr);
-    static std::shared_ptr<TerminalState> term_state(nullptr);
-    static std::shared_ptr<TerminalView> term_view(nullptr);
+    explicit Impl(CaptureSession::TransportFactory factory) : session(std::move(factory)) {}
 
-    static RawSerialCapture raw_capture;
-    static ImGuiFileDialog raw_capture_dialog;
+    void Update() {
+        const bool received = session.Poll();
+        if (term_state != session.GetTerminalState()) {
+            const auto options = term_view->GetOptions();
+            term_state = session.GetTerminalState();
+            term_view = std::make_unique<TerminalView>(term_data, term_state, options);
+            find_state.owner = nullptr;
+            find_state.active_match.reset();
+        }
+        if (received && auto_scroll && !find_state.open) term_view->SetCursorToEnd();
+        serial_name = session.GetParameters() ? session.GetParameters()->port : "[Not Connected]";
+        if (setup_saved && session.GetState() == CaptureSession::State::Connected) {
+            settings.write();
+            setup_saved = false;
+        }
+        else if (!session.IsBusy()) setup_saved = false;
+    }
 
     void StopRawCapture() {
         if (!raw_capture.Stop()) {
@@ -61,7 +71,7 @@ namespace imterm {
         }
     }
 
-    static void OpenRawCaptureDialog() {
+    void OpenRawCaptureDialog() {
         const auto directory = raw_capture.GetPath().empty()
             ? std::filesystem::current_path()
             : raw_capture.GetPath().parent_path();
@@ -71,7 +81,7 @@ namespace imterm {
             ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_ConfirmOverwrite);
     }
 
-    static void ShowRawCaptureDialog() {
+    void ShowRawCaptureDialog() {
         if (raw_capture_dialog.Display("RawRxCapture", ImGuiWindowFlags_NoCollapse,
                 ImVec2(600, 350))) {
             if (raw_capture_dialog.IsOk()
@@ -82,7 +92,7 @@ namespace imterm {
         }
     }
 
-    static void RawCaptureStatus() {
+    void RawCaptureStatus() {
         if (raw_capture.IsActive()) {
             ImGui::Text("Raw RX: %llu bytes | %s",
                 static_cast<unsigned long long>(raw_capture.GetByteCount()),
@@ -100,19 +110,25 @@ namespace imterm {
         }
     }
 
-    static auto settings = CaptureSettings();
+    void ConnectionError() {
+        if (session.GetError().empty()) return;
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+        ImGui::TextWrapped("%s", session.GetError().c_str());
+        ImGui::PopStyleColor();
+    }
 
-    constexpr std::chrono::seconds port_cache_duration = 1s;
+
+    static constexpr std::chrono::seconds port_cache_duration = 1s;
 
     struct InterfaceZoomState {
-        float current = settings.get_zoom_factor();
+        float current = DefaultInterfaceZoom;
         std::optional<float> pending;
         std::optional<ImGuiStyle> dpi_scaled_base_style;
         std::optional<int> preserved_top_line;
         float wheel_accumulator = 0.0f;
     };
 
-    static InterfaceZoomState interface_zoom;
+    InterfaceZoomState interface_zoom;
 
     float GetInterfaceZoomFactor() {
         return interface_zoom.pending.value_or(interface_zoom.current);
@@ -223,7 +239,7 @@ namespace imterm {
         const TerminalView* owner = nullptr;
     };
 
-    static FindState find_state;
+    FindState find_state;
 
     void RefreshFindStatus() {
         const TextMatchStatus status = term_data->GetTextMatchStatus(
@@ -401,14 +417,6 @@ namespace imterm {
     }
 
     void CaptureWindowCreate(void) {
-
-        static bool capture_window_init = false;
-
-        if (!capture_window_init) {
-            capture_window_init = true;
-        }
-
-
         ImGui::Begin(serial_name.c_str(), nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar);
 
         HandleInterfaceZoomShortcuts();
@@ -430,79 +438,21 @@ namespace imterm {
 
         RawCaptureStatus();
 
-        if (term_view && render_view) {
-            term_view->Render("TerminalView");
-        }
+        ConnectionError();
 
-        if (!capture_error_message.empty()) {
-            ImGui::TextColored(
-                ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-                "%s", capture_error_message.c_str());
+        if (term_view) {
+            term_view->Render("TerminalView");
         }
 
         ImGui::End();
 
-        if (serial_init == ConnectionStage::connected) ShowRawCaptureDialog();
-
-        if (term_view && term_state) {
-            if (serial && serial->isOpen()) {
-
-                try {
-
-                    while (term_view->KeyboardInputAvailable()) {
-                        uint8_t keyboard_input = term_view->GetKeyboardInput();
-                        serial->write(&keyboard_input, 1);
-                    }
-
-                    size_t available = serial->available();
-
-                    if (available > 0) {
-
-                        // serial::read(vector, count) appends the bytes read.
-                        std::vector<uint8_t> buffer;
-                        buffer.reserve(available);
-                        serial->read(buffer, available);
-                        if (!raw_capture.Append(buffer)) {
-                            std::cerr << raw_capture.GetError() << '\n';
-                        }
-                        term_state->Input(buffer);
-
-                        if (auto_scroll && !find_state.open) {
-                            term_view->SetCursorToEnd();
-                        }
-                    }
-
-                    while (term_state->TerminalOutputAvailable()) {
-                        auto output = term_state->GetTerminalOutput();
-                        serial->write(output);
-                    }
-
-                }
-                catch (const serial::IOException& ex) {
-                    std::cerr << "Error occurred: " << ex.what() << std::endl;
-                    CloseSerialPort();
-                }
-                catch (const std::exception& ex) {
-                    capture_error_message =
-                        std::string("Terminal input error: ") + ex.what();
-                    std::cerr << capture_error_message << std::endl;
-                }
-                catch (...) {
-                    capture_error_message = "Unknown terminal input error";
-                    std::cerr << capture_error_message << std::endl;
-                }
-            }
-        }
+        if (session.GetState() == CaptureSession::State::Connected) ShowRawCaptureDialog();
 
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        
-        if (serial_init == ConnectionStage::reconnecting) {
-            ReconnectionWindow(viewport->ID);
-        }
-        else if ((serial_init == ConnectionStage::not_connected) || (serial_init == ConnectionStage::reconfiguring)) {
+        ReconnectionWindow(viewport->ID);
+        if (!session.IsBusy() && session.GetState() != CaptureSession::State::Connected) {
             PortSelectionWindow(viewport->ID);
         }
-
     }
 
     void Menu() {
@@ -510,117 +460,29 @@ namespace imterm {
         if (ImGui::BeginMenuBar())
         {
 
-            std::string menu_port_string;
-
-            if (serial) {
-                menu_port_string = serial->getPort();
-            }
-            else {
-                menu_port_string = "No Connection";
-            }
-
-            if (ImGui::BeginMenu(menu_port_string.c_str()))
-            {
-                
-                if (ImGui::MenuItem("Auto Reconnect", NULL, auto_reconnect, true)) {
-                    auto_reconnect = !auto_reconnect;
-                }
-
-                ImGui::Separator();
-
-                ImGui::MenuItem("Select Parameters", NULL, false, false);
-
-                std::ostringstream oss;
-
-                if (serial == nullptr) {
-
-                    auto serial_node = settings.get_serial_settings();
-
-                    std::optional<std::string> op_baud_str = serial_node["baud"].value<std::string>();
-                    std::optional<std::string> op_data_bits_str = serial_node["data_bits"].value<std::string>();
-                    std::optional<std::string> op_parity_str = serial_node["parity"].value<std::string>();
-                    std::optional<std::string> op_stop_bits_str = serial_node["stop_bits"].value<std::string>();
-
-                    oss << (op_baud_str.has_value() ? op_baud_str.value() : "???");
-                    oss << std::string(" ");
-                    oss << (op_data_bits_str.has_value() ? op_data_bits_str.value() : "?");
-                    oss << (op_parity_str.has_value() ? op_parity_str.value().substr(1) : "?");
-                    oss << (op_stop_bits_str.has_value() ? op_stop_bits_str.value() : "?");
-
-                } else {
-
-                    uint32_t baud = serial->getBaudrate();
-
-                    // TODO: Flow control and Timeouts
-
-                    oss << serial->getBaudrate() << " " << (int)serial->getBytesize();
-                    switch (serial->getParity()) {
-                    case serial::parity_none:
-                        oss << "N";
-                        break;
-                    case serial::parity_odd:
-                        oss << "O";
-                        break;
-                    case serial::parity_even:
-                        oss << "E";
-                        break;
-                    case serial::parity_mark:
-                        oss << "M";
-                        break;
-                    case serial::parity_space:
-                        oss << "S";
-                        break;
-                    }
-
-                    switch (serial->getStopbits()) {
-                    case serial::stopbits_one:
-                        oss << "1";
-                        break;
-                    case serial::stopbits_one_point_five:
-                        oss << "1.5";
-                        break;
-                    case serial::stopbits_two:
-                        oss << "2";
-                        break;
-                    }
-
-                }
-
-                if (ImGui::MenuItem(oss.str().c_str(), NULL, false)) {
-                    serial_init = ConnectionStage::reconfiguring;
-                }
-
-                if (serial) {
-                    ImGui::Separator();
-
-                    ImGui::MenuItem("Select New Port", NULL, false, false);
-
-                    auto port_infos_tuple = serial::list_ports_cached(port_cache_duration);
-                    auto port_infos = std::get<1>(port_infos_tuple);
-                    for (serial::PortInfo& info : port_infos) {
-                        bool current_port = (info.port == serial->getPort());
-                        if (ImGui::MenuItem(info.port.c_str(), NULL, current_port, true)) {
-                            if (!current_port) {
-                                try {
-                                    term_log->SetPostfix(info.port.c_str());
-                                    serial->setPort(info.port.c_str());
-                                }
-                                catch (const serial::IOException& ex) {
-                                    std::cerr << "Error occurred: " << ex.what() << std::endl;
-                                    CloseSerialPort();
-                                    serial_init = ConnectionStage::reconfiguring;
-                                    connection_message = "** Unable to open " + info.port + " **";
-                                }
-
-                            }
+            const auto& parameters = session.GetParameters();
+            const std::string menu_port_string = parameters ? parameters->port : "No Connection";
+            if (ImGui::BeginMenu(menu_port_string.c_str())) {
+                if (ImGui::MenuItem("Auto Reconnect", nullptr, session.GetAutoReconnect()))
+                    session.SetAutoReconnect(!session.GetAutoReconnect());
+                if (ImGui::MenuItem("Parameters...", nullptr, false, !session.IsBusy()))
+                    session.BeginReconfiguration();
+                if (ImGui::MenuItem("Disconnect", nullptr, false, session.CanSend()))
+                    session.Disconnect();
+                if (parameters && ImGui::BeginMenu("Select New Port", session.CanSend())) {
+                    auto ports = serial::list_ports_cached(port_cache_duration);
+                    for (const auto& info : std::get<1>(ports)) {
+                        const bool current = info.port == parameters->port;
+                        if (ImGui::MenuItem(info.port.c_str(), nullptr, current) && !current) {
+                            auto next = *parameters;
+                            next.port = info.port;
+                            session.Connect(next);
                         }
                     }
+                    ImGui::EndMenu();
                 }
-
                 ImGui::EndMenu();
             }
-
-            
 
             const char * autoScrollOn = "Auto Scroll On";
             const char * autoScrollOff = "Auto Scroll Off";
@@ -763,113 +625,25 @@ namespace imterm {
             
             
 
-            if (serial && serial->isOpen()) {
-
-                static bool dtr = false;
-                static bool rts = false;
-
-                try {
-
-                    if (ImGui::MenuItem(dtr ? "DTR=1" : "DTR=0", NULL, false, true)) {
-                        dtr = !dtr;
-                        serial->setDTR(dtr);
-                    }
-                    if (ImGui::MenuItem(rts ? "RTS=1" : "RTS=0", NULL, false, true)) {
-                        rts = !rts;
-                        serial->setRTS(rts);
-                    }
-                    ImGui::MenuItem(serial->getCTS() ? "CTS=1" : "CTS=0", NULL, false, false);
-                    ImGui::MenuItem(serial->getDSR() ? "DSR=1" : "DSR=0", NULL, false, false);
-                    ImGui::MenuItem(serial->getCD() ? "DCD=1" : "DCD=0", NULL, false, false);
-
+            if (session.CanSend()) {
+                if (ImGui::MenuItem(session.GetDTR() ? "DTR=1" : "DTR=0"))
+                    session.SetDTR(!session.GetDTR());
+                if (ImGui::MenuItem(session.GetRTS() ? "RTS=1" : "RTS=0", nullptr, false, session.CanSetRTS()))
+                    session.SetRTS(!session.GetRTS());
+                if (const auto& signals = session.GetSignals()) {
+                    ImGui::MenuItem(signals->cts ? "CTS=1" : "CTS=0", nullptr, false, false);
+                    ImGui::MenuItem(signals->dsr ? "DSR=1" : "DSR=0", nullptr, false, false);
+                    ImGui::MenuItem(signals->dcd ? "DCD=1" : "DCD=0", nullptr, false, false);
                 }
-                catch (const std::exception& ex) {
-                    std::cerr << "Error occurred: " << ex.what() << std::endl;
-                    CloseSerialPort();
+                else {
+                    ImGui::MenuItem("Modem status unavailable", nullptr, false, false);
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                        ImGui::SetTooltip("%s", session.GetSignalError().c_str());
                 }
             }
 
             ImGui::EndMenuBar();
         }
-    }
-
-    std::optional<std::string> CloseSerialPort() {
-
-        std::optional<std::string> returnValue = std::nullopt;
-        if (term_state) term_state->FinishInput();
-
-        try {
-
-            bool was_open = false;
-
-            if (serial) {
-                
-                if (serial->isOpen()) {
-                    was_open = true;
-                    returnValue = serial->getPort();
-                }
-                serial->close();
-            }
-
-            if (auto_reconnect && was_open) {
-                serial_init = ConnectionStage::reconnecting;
-            }
-            else {
-                serial_init = ConnectionStage::not_connected;
-            }
-
-        }
-        catch (const serial::IOException& ex) {
-            std::cerr << "Error occurred: " << ex.what() << std::endl;
-        }
-
-        return returnValue;
-    }
-
-    void OpenSerialPort(const std::string& port, uint32_t baudrate, serial::Timeout timeout,
-        bytesize_t bytesize, parity_t parity, stopbits_t stopbits,
-        flowcontrol_t flowcontrol) {
-        
-        std::optional<std::string> oldPort = CloseSerialPort();
-
-        try {
-            serial = new Serial(
-                port,
-                baudrate,
-                timeout,
-                bytesize,
-                parity,
-                stopbits,
-                flowcontrol
-            );
-
-            if (!oldPort || oldPort.value() != port) {
-                term_log.reset();
-                term_data.reset();
-                term_state.reset();
-                term_view.reset();
-            }
-
-            if (!term_log) {
-                auto ops = TerminalLogger::Options();
-                ops.Enabled = enable_logging;
-                term_log = std::make_shared<TerminalLogger>(port, ops);
-            }
-            if (!term_data) term_data = std::make_shared<TerminalData>(term_log);
-            if (!term_state) term_state = std::make_shared<TerminalState> (term_data, TerminalState::NewLineMode::Strict);
-            if (!term_view) term_view = std::make_shared<TerminalView> (term_data, term_state, TerminalView::Options());
-
-
-            serial_init = ConnectionStage::connected;
-            render_view = true;
-            
-            
-        }
-        catch (const std::exception& e) {
-            std::cerr << "Could not open port. " << e.what() << "\n";
-            connection_message = "** Unable to open " + port + " **";
-        }
-
     }
 
     template<typename T>
@@ -943,23 +717,22 @@ namespace imterm {
         }
 
         int lines = raw_capture.GetError().empty() ? 12 : 13;
-        if (connection_message != "") {
-            lines++;
-        }
+        const float window_width = input_x_offset + input_width + style.WindowPadding.x;
+        const auto& error = session.GetError();
+        const float error_height = error.empty() ? 0.0f
+            : ImGui::CalcTextSize(error.c_str(), nullptr, false,
+                window_width - style.WindowPadding.x * 2.0f).y + style.ItemSpacing.y;
 
         ImGui::OpenPopup("Setup");
 
         ImVec2 center = viewport->GetCenter();
-        ImVec2 window_size = ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height * lines) + extra_vertical_spacing);
+        ImVec2 window_size = ImVec2(window_width, (line_height * lines) + extra_vertical_spacing + error_height);
         ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
         ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
         if (ImGui::BeginPopupModal("Setup", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 
-            if (connection_message != "") {
-                ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(connection_message.c_str()).x) * 0.5f);
-                ImGui::TextUnformatted(connection_message.c_str());
-            }
+            ConnectionError();
 
             static std::vector<imterm::ComboDataItem<serial::PortInfo>> port_items;
 
@@ -1054,8 +827,8 @@ namespace imterm {
                 std::optional<std::string> value_str = serial_node["baud"].value<std::string>();
 
                 if (value_str.has_value()) {
-                    value_str->copy(baud_text, sizeof(baud_text) - 1);
-                    baud_text[value_str->size()] = 0;
+                    const auto count = value_str->copy(baud_text, sizeof(baud_text) - 1);
+                    baud_text[count] = 0;
                 }
 
                 auto input_node = settings.get_input_settings();
@@ -1163,32 +936,26 @@ namespace imterm {
 
                 if (baud_int != -1) {
 
-                    serial_init = ConnectionStage::not_connected;
+
 
                     if (cbo_port_selection_data.item_is_selected()) {
 
-                        connection_message = "";
-
                         serial_name = cbo_port_selection_data.get_selected_data().port;
 
-                        OpenSerialPort(
-                            serial_name, 
-                            baud_int,
-                            serial::Timeout(
-                                50, /* inter_byte_timeout_ */
-                                50, /* read_timeout_constant_ */
-                                10, /* read_timeout_multiplier_ */
-                                50, /* write_timeout_constant_ */
-                                10  /* write_timeout_multiplier_ */
-                            ),
-                            cbo_data_bits_data.get_selected_data(),
-                            cbo_parity_data.get_selected_data(),
-                            cbo_stop_bits_data.get_selected_data(),
-                            serial::flowcontrol_none
-                        );
+                        SerialParameters parameters;
+                        parameters.port = serial_name;
+                        parameters.baudrate = baud_int;
+                        parameters.bytesize = cbo_data_bits_data.get_selected_data();
+                        parameters.parity = cbo_parity_data.get_selected_data();
+                        parameters.stopbits = cbo_stop_bits_data.get_selected_data();
+                        parameters.flowcontrol = cbo_flow_control_data.get_selected_data();
+                        setup_saved = session.Connect(parameters);
+                        auto log_options = term_log->GetOptions();
+                        log_options.Enabled = enable_logging;
+                        term_log->SetOptions(log_options);
                     }
 
-                    if (serial_init == ConnectionStage::connected) {
+                    if (setup_saved) {
 
                         auto serial_node_tbl = settings.get_serial_settings().as_table();
                         cbo_port_selection_data.put_selected_item(serial_node_tbl);
@@ -1200,8 +967,6 @@ namespace imterm {
 
                         auto input_node_tbl = settings.get_input_settings().as_table();
                         cbo_new_line_mode_data.put_selected_item(input_node_tbl);
-
-                        settings.write();
 
                         term_state->SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
 
@@ -1215,89 +980,48 @@ namespace imterm {
         }
     }
 
-    void ReconnectionWindow(ImGuiID id) {
-
-        const auto layout = MeasureConnectionDialogLayout(2);
-        const float input_x_offset = layout.input_width;
-        const float input_width = layout.input_width;
-        const float line_height = layout.line_height;
-        const float extra_vertical_spacing = layout.extra_vertical_spacing;
-
-        static std::vector<serial::PortInfo> port_infos;
-
-        static ComboData<PortInfo> cbo_port_selection_data("Serial Port", input_x_offset);
-        static ComboData<bytesize_t> cbo_data_bits_data("Data bits", input_x_offset);
-        static ComboData<stopbits_t> cbo_stop_bits_data("Stop bits", input_x_offset);
-        static ComboData<parity_t> cbo_parity_data("Parity", input_x_offset);
-        static ComboData<flowcontrol_t> cbo_flow_control_data("Flow control", input_x_offset);
-        static char baud_text[128] = "115200";
-
-        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, input_width,
-            "A carriage return (CR) and line feed (LF) is needed\n"
-            "for each new line of data. If the input data only\n"
-            "only contains one or the other, select the mode\n"
-            "that will add the missing element.");
-
-        static std::vector<ComboDataBase*> cbo_datas = {
-            &cbo_port_selection_data,
-            &cbo_data_bits_data,
-            &cbo_stop_bits_data,
-            &cbo_parity_data,
-            &cbo_flow_control_data,
-            &cbo_new_line_mode_data
-        };
-
-
-        ImGuiStyle& style = ImGui::GetStyle();
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-
-        for (ComboDataBase* comboData : cbo_datas) {
-            comboData->set_input_x_position(input_x_offset);
-            comboData->set_input_width(input_width);
-        }
-
-        ImGui::OpenPopup("Reconnecting...");
-
-        ImVec2 center = viewport->GetCenter();
-        ImVec2 window_size = ImVec2(input_x_offset + input_width + style.WindowPadding.x, (line_height * 3) + extra_vertical_spacing);
-        ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
-        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-
-        if (ImGui::BeginPopupModal("Reconnecting...", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-
-            static system_clock::time_point last_attempt_time = system_clock::now() - 1s;
-
-            // We should not have gotten here if serial is null
-            assert(serial);
-            assert(!serial->isOpen());
-
-            std::string attempt_string = std::string("Attempting to reconnect to " + serial->getPort());
-            ImGui::SetCursorPosX((window_size.x - ImGui::CalcTextSize(attempt_string.c_str()).x) * 0.5f);
-            ImGui::TextUnformatted(attempt_string.c_str());
-
-            if ((system_clock::now() - last_attempt_time) > 1s) {
-
-                last_attempt_time = system_clock::now();
-
-                try {
-                    serial->open();
-                    serial_init = ConnectionStage::connected;
+    void ReconnectionWindow(ImGuiID) {
+        for (const char* title : {"Connecting...", "Reconnecting..."}) {
+            const bool active = session.IsBusy()
+                && (session.GetState() == CaptureSession::State::Connecting
+                    ? std::string_view(title) == "Connecting..."
+                    : std::string_view(title) == "Reconnecting...");
+            if (active) ImGui::OpenPopup(title);
+            if (!ImGui::IsPopupOpen(title)) continue;
+            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                if (!active) ImGui::CloseCurrentPopup();
+                else {
+                    ImGui::Text("%s %s", title, serial_name.c_str());
+                    if (!session.GetError().empty()) ImGui::TextWrapped("%s", session.GetError().c_str());
+                    if (ImGui::Button("Cancel")) {
+                        session.Cancel();
+                        ImGui::CloseCurrentPopup();
+                    }
                 }
-                catch (const std::exception& ex) {
-                    std::cerr << "Error occurred: " << ex.what() << std::endl;
-                }
-
+                ImGui::EndPopup();
             }
-
-            ImGui::Spacing();
-            ImGui::Spacing();
-
-            if (ImGui::Button("Cancel", ImVec2(window_size.x - (style.WindowPadding.x * 2), 0))) {
-                serial_init = ConnectionStage::not_connected;
-            }
-
-            ImGui::EndPopup();
         }
     }
+};
 
+    Capture::Capture(CaptureSession::TransportFactory factory) : mImpl(std::make_unique<Impl>(std::move(factory))) {}
+    Capture::~Capture() = default;
+    void Capture::Render() { mImpl->CaptureWindowCreate(); }
+    void Capture::Update() {
+        // Keyboard bytes are produced by the previous frame. Drain them even
+        // while disconnected so stale commands never reach another connection.
+        std::vector<uint8_t> input;
+        while (mImpl->term_view->KeyboardInputAvailable())
+            input.push_back(mImpl->term_view->GetKeyboardInput());
+        if (!input.empty()) mImpl->session.Send(input);
+        mImpl->Update();
+    }
+    void Capture::Shutdown() { mImpl->session.Shutdown(); }
+    CaptureSession& Capture::GetSession() { return mImpl->session; }
+    float Capture::GetInterfaceZoomFactor() { return mImpl->GetInterfaceZoomFactor(); }
+    void Capture::InitializeInterfaceZoom() { mImpl->InitializeInterfaceZoom(); }
+    void Capture::ApplyPendingInterfaceZoom() { mImpl->ApplyPendingInterfaceZoom(); }
+    void Capture::QueueInterfaceZoomWheel(float delta) { mImpl->QueueInterfaceZoomWheel(delta); }
 }

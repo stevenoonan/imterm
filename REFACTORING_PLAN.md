@@ -43,7 +43,7 @@ half-conversion.
 - [X] Milestone 2: Encapsulate the terminal buffer and logging invariants
 - [X] Milestone 3: Correct and isolate terminal protocol semantics
 - [X] Milestone 4: Define a consistent text-encoding boundary
-- [ ] Milestone 5: Introduce an owned capture session
+- [X] Milestone 5: Introduce an owned capture session
 - [ ] Milestone 6: Make configuration typed, validated, and reliable
 - [ ] Milestone 7: Split the terminal view into focused components
 - [ ] Milestone 8: Encapsulate application/platform startup and finish cleanup
@@ -337,6 +337,49 @@ file-level global state.
 - Auto reconnect, flow-control lines, terminal responses, logging, and shutdown
   work with real hardware.
 - UI actions are disabled or safe in every connection state.
+
+### Implementation notes (2026-10-15)
+
+- Ownership, threading, state/action table, and stream lifetime policy:
+  [Capture sessions](docs/capture-session.md). `main` owns `Capture`, which owns
+  the view/UI state and one `CaptureSession`. The session owns terminal data,
+  core state, logger, raw capture, and a transport worker. Serial/terminal
+  file-level owners and the raw `Serial*` have been removed.
+- Transport calls run exclusively on the worker. The UI consumes bounded RX
+  events and submits bounded TX outside rendering. Reads/writes use 20 ms fixed
+  timeouts and 4 KiB chunks; generation IDs cancel stale work. Shutdown joins the
+  worker. Native OS open/close latency remains dependent on the device driver.
+- Auto reconnect and same-port reconfiguration preserve terminal contents;
+  successful changes to another port reset protocol state and contents while
+  retaining session preferences. Failed changes retain the old buffer. Stream
+  boundaries finish UTF-8, reset incomplete escapes, flush logs, and discard
+  unsent output. Raw capture stays active until explicitly stopped or shutdown.
+- Setup and menus use session state/capabilities. Connecting and reconnecting
+  modals dismiss on success, cancellation, or failure. Initial menus have valid
+  terminal/logger objects. Selected flow control is passed to the transport;
+  hardware flow control disables manual RTS. Requested modem lines are restored
+  after reconnect; unsupported modem queries do not drop the data connection.
+- A regression test reproduced a bundled serial-library partial-open leak (ten
+  failed configurations leaked ten descriptors). Narrow Unix and Windows fixes
+  release the acquired OS handle if UART configuration throws. No other
+  third-party source was changed by this milestone.
+- Validation: Linux GCC application builds from clean Debug and Release build
+  directories; 129 tests per configuration pass. Clang ASan/UBSan with leak
+  detection passes all 129 tests outside the sandbox's tracing wrapper. Added
+  tests cover fake transport failures, partial/zero writes, bounded TX,
+  cancellation, retry timing, modem controls, 30 repeated reconfigurations,
+  preservation/reset behavior, logging/raw flush, destructor/shutdown, headless
+  UI states/modal dismissal, native PTY transfers, hangup/reconnect, and
+  partial-open descriptor counts.
+- Graphical loopback smoke: setup/connection, ASCII, CR/LF, tabs, colors, UTF-8
+  and malformed input, typing/navigation, status/cursor replies, auto-scroll,
+  clear, resize, device removal/replacement with auto reconnect, cancellation,
+  and normal close (exit 0) were exercised using an isolated PTY. Temporary
+  sources added the PTY to port enumeration and recorded session state; no
+  launch hook or modem-ioctl shim is part of the application. Copy/paste and
+  logging/raw output are also covered automatically. Physical modem signals,
+  ESP32 hardware, and Windows execution were unavailable. Font fallback and
+  other encoding/layout limitations remain as documented in Milestone 4.
 
 ## Milestone 6: Make configuration typed, validated, and reliable
 

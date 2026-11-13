@@ -152,7 +152,15 @@ Serial::SerialImpl::open ()
     }
   }
 
-  reconfigurePort();
+  try {
+    reconfigurePort();
+  } catch (...) {
+    // open() acquired the descriptor before configuration. close() only
+    // releases fully open ports, so unwind this partial open explicitly.
+    ::close(fd_);
+    fd_ = -1;
+    throw;
+  }
   is_open_ = true;
 }
 

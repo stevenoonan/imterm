@@ -161,6 +161,17 @@ target_link_libraries(imterm_core PRIVATE beep)
 imterm_enable_warnings(imterm_core)
 imterm_enable_sanitizers(imterm_core)
 
+find_package(Threads REQUIRED)
+add_library(imterm_session STATIC
+	${SRC_DIR}/capture_session.cpp
+	${SRC_DIR}/capture_session.h
+	${SRC_DIR}/serial_transport.cpp
+	${SRC_DIR}/serial_transport.h
+)
+target_link_libraries(imterm_session PUBLIC imterm_core PRIVATE serial Threads::Threads)
+imterm_enable_warnings(imterm_session)
+imterm_enable_sanitizers(imterm_session)
+
 # Main application
 set(IMTERM_SRCS
 	${SRC_DIR}/capture.cpp
@@ -180,6 +191,7 @@ add_executable(imterm WIN32
 target_link_libraries(
 	imterm
 	imterm_core
+	imterm_session
 	serial
 	beep
 	imgui::imgui
@@ -202,6 +214,7 @@ if(BUILD_TESTING)
 
 	add_executable(imterm_tests
 		tests/capture_settings_test.cpp
+		tests/capture_session_test.cpp
 		tests/escape_sequence_parser_test.cpp
 		tests/interface_zoom_test.cpp
 		tests/raw_serial_capture_test.cpp
@@ -214,6 +227,7 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(imterm_tests PRIVATE
 		imterm_core
+		imterm_session
 		GTest::gtest_main
 		tomlplusplus::tomlplusplus
 	)
@@ -225,14 +239,19 @@ if(BUILD_TESTING)
 
 	# Exercise UI geometry with an ImGui context, without a display or renderer.
 	add_executable(imterm_ui_tests
+		tests/capture_ui_test.cpp
 		tests/interface_zoom_ui_test.cpp
 		tests/terminal_encoding_ui_test.cpp
+		${SRC_DIR}/capture.cpp
 		${SRC_DIR}/terminal_view.cpp
 	)
 	target_link_libraries(imterm_ui_tests PRIVATE
 		imterm_core
+		imterm_session
 		imgui::imgui
 		GTest::gtest_main
+		tomlplusplus::tomlplusplus
+		ImGuiFileDialog
 	)
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		target_link_libraries(imterm_ui_tests PRIVATE serial)

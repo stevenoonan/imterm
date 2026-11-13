@@ -391,7 +391,8 @@ static void glfw_scroll_callback(
         || glfwGetKey(window, alternate_right) == GLFW_PRESS;
 
     if (shortcut_down && !alternate_down) {
-        imterm::QueueInterfaceZoomWheel(static_cast<float>(yoffset));
+        if (auto* capture = static_cast<imterm::Capture*>(glfwGetWindowUserPointer(window)))
+            capture->QueueInterfaceZoomWheel(static_cast<float>(yoffset));
         return;
     }
 
@@ -543,7 +544,9 @@ int __stdcall WinMain(
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
-    imterm::InitializeInterfaceZoom();
+    imterm::Capture capture;
+    glfwSetWindowUserPointer(window, &capture);
+    capture.InitializeInterfaceZoom();
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window, true);
@@ -617,10 +620,12 @@ int __stdcall WinMain(
             }
         }
 
+        capture.Update();
+
         // Start the Dear ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
-        imterm::ApplyPendingInterfaceZoom();
+        capture.ApplyPendingInterfaceZoom();
         ImGui::NewFrame();
 
 #ifdef IMGUI_HAS_VIEWPORT
@@ -629,7 +634,7 @@ int __stdcall WinMain(
         if (once) {
             once = false;
             ImVec2 text_size = ImGui::CalcTextSize(std::string(150, '0').c_str());
-            const float zoom_factor = imterm::GetInterfaceZoomFactor();
+            const float zoom_factor = capture.GetInterfaceZoomFactor();
             glfwSetWindowSize(
                 window,
                 static_cast<int>(text_size.x / zoom_factor),
@@ -654,7 +659,7 @@ int __stdcall WinMain(
         ImGui::ShowDemoWindow(&show_demo_window);
         //[...]
 #else
-        imterm::CaptureWindowCreate();
+        capture.Render();
 #endif
 
         //imterm::PortSelectionWindow(viewport->ID);
@@ -712,8 +717,7 @@ int __stdcall WinMain(
     }
 
     // Complete pending UTF-8 before the terminal and logger are destroyed.
-    imterm::CloseSerialPort();
-    imterm::StopRawCapture();
+    capture.Shutdown();
 
     // Cleanup
     err = vkDeviceWaitIdle(g_Device);
