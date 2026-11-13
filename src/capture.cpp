@@ -172,7 +172,7 @@ struct Capture::Impl {
 
     InterfaceZoomState interface_zoom;
 
-    float GetInterfaceZoomFactor() {
+    float GetInterfaceZoomFactor() const {
         return interface_zoom.pending.value_or(interface_zoom.current);
     }
 
@@ -855,7 +855,8 @@ struct Capture::Impl {
     }
     void Capture::Shutdown() { mImpl->session.Shutdown(); }
     CaptureSession& Capture::GetSession() { return mImpl->session; }
-    float Capture::GetInterfaceZoomFactor() { return mImpl->GetInterfaceZoomFactor(); }
+    const CaptureSession& Capture::GetSession() const { return mImpl->session; }
+    float Capture::GetInterfaceZoomFactor() const { return mImpl->GetInterfaceZoomFactor(); }
     void Capture::InitializeInterfaceZoom() { mImpl->InitializeInterfaceZoom(); }
     void Capture::ApplyPendingInterfaceZoom() { mImpl->ApplyPendingInterfaceZoom(); }
     void Capture::QueueInterfaceZoomWheel(float delta) { mImpl->QueueInterfaceZoomWheel(delta); }

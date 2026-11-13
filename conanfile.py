@@ -1,12 +1,11 @@
 import os
 
 from conan import ConanFile
-from conan.tools.cmake import CMakeToolchain, CMake, CMakeDeps, cmake_layout
+from conan.tools.cmake import cmake_layout
 from conan.tools.files import copy
-import platform
 
 
-class ImGuiExample(ConanFile):
+class ImtermConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     generators = "CMakeDeps", "CMakeToolchain"
     default_options = {
@@ -35,9 +34,7 @@ class ImGuiExample(ConanFile):
         imterm_conan_imgui_bindings = os.path.join(self.source_folder, "deps", "conan", "imgui", "bindings")
         
         copy(self, "*glfw*", imgui_res_bindings, imterm_conan_imgui_bindings)
-        #copy(self, "*opengl3*", imgui_res_bindings, imterm_conan_imgui_bindings)
         copy(self, "*vulkan*", imgui_res_bindings, imterm_conan_imgui_bindings)
-        copy(self, "*win32*", imgui_res_bindings, imterm_conan_imgui_bindings)
 
     def layout(self):
         cmake_layout(self)

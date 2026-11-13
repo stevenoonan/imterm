@@ -1,8 +1,9 @@
 # imterm Refactoring Plan
 
 This roadmap defines the architecture and completion requirements for imterm's
-refactoring work. Milestones 0–7 are complete; Milestone 8 covers the application
-shell and build cleanup. The linked guides describe the current implementation.
+refactoring work. Milestones 0–8 are implemented, including the application
+shell and build cleanup. Platform CI and the manual release checks below define
+the remaining execution gates. The linked guides describe the current implementation.
 
 ## Goals
 
@@ -39,7 +40,7 @@ Split work into smaller mergeable pieces if needed. Keep each piece usable.
 - [X] Milestone 5: Introduce an owned capture session
 - [X] Milestone 6: Make configuration typed, validated, and reliable
 - [X] Milestone 7: Split the terminal view into focused components
-- [ ] Milestone 8: Encapsulate application/platform startup and finish cleanup
+- [X] Milestone 8: Encapsulate application/platform startup and finish cleanup
 
 ## Milestone 0: Establish the safety net
 
@@ -161,42 +162,39 @@ smoke checks use 100%, 125%, 150%, and 200% scaling.
 
 ## Milestone 8: Encapsulate application/platform startup and finish cleanup
 
-**Outcome:** The application shell has explicit lifetime management, build rules
-are target-scoped, and the refactored architecture is documented for future work.
+**Status:** Implemented. [Application architecture](docs/architecture.md),
+[build policy](docs/building.md#first-party-warning-policy),
+[CI and test matrix](tests/README.md#continuous-integration).
 
-**Expected size:** Medium to large.
+`RunApplication` owns the GLFW runtime/window, ImGui context/platform backend,
+Vulkan renderer, and Capture in dependency order. The Vulkan implementation owns
+all native handles and partially initialized swapchain images. Every startup
+result is checked; failures unwind to an error-reporting entry point. The
+surface is explicitly released, backend partial initialization is cleaned up,
+and teardown continues after device loss. Copied example UI and global Vulkan
+state are gone; the GLFW/Vulkan renderer backend is retained.
 
-### Scope
+CMake 3.24 matches preset schema version 5. C++20, definitions, includes,
+warnings and sanitizers are target-scoped. Third-party backends have a separate
+target. First-party `/W4` or `-Wall -Wextra -Wpedantic` applies to the shell,
+libraries and tests, with opt-in `/WX`/`-Werror` required by CI. Conan and optional
+GLFW/ImGui submodule paths are both retained and tested.
 
-- Wrap GLFW, Vulkan instance/device/window resources, and ImGui initialization in
-  RAII owners with deterministic partial-failure cleanup.
-- Check window creation and other currently assumed initialization results.
-- Remove remaining copied example code and obsolete comments.
-- Replace global compiler flags and include directories with target-scoped CMake
-  settings.
-- Align the declared minimum CMake version with the features actually used.
-- Make warnings-as-errors available for first-party code on supported CI
-  toolchains while keeping third-party warnings isolated.
-- Add CI or documented automation for supported Debug/Release platform builds and
-  tests.
-- Document the resulting module boundaries and dependency direction.
-- Review public names, const-correctness, signed/unsigned indexing, and remaining
-  assertions at trust boundaries.
+The CI matrix covers Windows/MSVC and Linux/GCC/Clang Debug/Release builds and
+all hardware-independent suites on every push, pull request and merge-queue
+run. Linux additionally exercises native PTYs and Vulkan startup, injected
+partial failures, resizing, repeat launches and shutdown with a software driver.
+A Clang sanitizer/fuzzer job covers parser/state safety. The architecture guide
+records dependency direction, ownership, assertion boundaries, signed/unsigned
+indexing and const API review. A reversed deletion-range regression now behaves
+consistently in Debug and Release.
 
-### Deliberately out of scope
-
-- Changing the renderer backend.
-- Removing supported dependency-management paths without a separate decision.
-- Major new end-user features.
-
-### Completion gate
-
-- Failure at each startup stage exits cleanly without leaked initialized resources.
-- First-party code builds cleanly under the agreed warning policy.
-- Debug and Release builds, automated tests, and the full smoke checklist pass on
-  supported platforms.
-- The README and architecture documentation match the actual build and ownership
-  model.
+**Validation:** Clean local Linux GCC Debug/Release and submodule builds, headless
+and PTY suites, Vulkan lifecycle tests, and Clang ASan/UBSan plus parser fuzzing
+pass. Windows execution is provided by the new CI matrix and must be confirmed
+by its first hosted run. The complete manual smoke checklist, including physical
+UART/modem lines and Windows/Wayland display scaling, remains a release gate;
+it has not been certified by these automated Linux checks.
 
 ## Manual smoke-test checklist
 
@@ -250,8 +248,8 @@ replacing these baseline checks.
 
 ## Open validation and follow-up work
 
-- Define the Windows/Linux compiler and configuration matrix used for release CI
-  as part of Milestone 8. Linux automated and PTY tests do not substitute for
+- Confirm the first hosted Windows/Linux CI matrix run and record the manual
+  release smoke results. Linux automated and PTY tests do not substitute for
   Windows execution or physical UART/modem-line checks.
 - Correct received-tab cursor advancement as a separately scoped protocol change,
   with tests for text following a tab. See the

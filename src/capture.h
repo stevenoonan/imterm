@@ -31,8 +31,9 @@ public:
     void Update();
     void Shutdown();
     CaptureSession& GetSession();
+    const CaptureSession& GetSession() const;
     const CaptureSettings& GetSettings() const;
-    float GetInterfaceZoomFactor();
+    float GetInterfaceZoomFactor() const;
     void InitializeInterfaceZoom();
     void ApplyPendingInterfaceZoom();
     void QueueInterfaceZoomWheel(float delta);

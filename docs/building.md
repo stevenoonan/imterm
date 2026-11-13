@@ -150,4 +150,21 @@ required. The build enables `IMGUI_USE_WCHAR32` consistently for the submodule
 ImGui library and its consumers; the Conan recipe enables the corresponding
 `use_wchar32` option for the package build.
 
-See [Testing imterm](../tests/README.md) for CTest, sanitizer, and fuzzing commands.
+## First-party warning policy
+
+Warnings are enabled for all first-party targets, including the application
+shell. To use the same warnings-as-errors policy as CI:
+
+```sh
+cmake --preset conan-debug -DIMTERM_WARNINGS_AS_ERRORS=ON
+cmake --build --preset conan-debug
+```
+
+Third-party libraries/backends keep their own compiler settings. C++20 and
+include paths are target-scoped. Both dependency paths remain supported; the
+submodule GLFW build defaults to X11, while the Conan GLFW build supports X11
+and Wayland. No Vulkan validation layer is required to launch a Debug build.
+
+See [Testing imterm](../tests/README.md) for CTest, graphics lifecycle tests,
+sanitizers, CI reproduction, and fuzzing commands, and
+[architecture](architecture.md) for ownership and module dependencies.

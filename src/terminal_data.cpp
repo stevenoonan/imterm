@@ -380,7 +380,6 @@ namespace imterm {
 	void TerminalData::DeleteRange(
 		const Coordinates& aStart, const Coordinates& aEnd)
 	{
-		assert(aEnd >= aStart);
 		assert(!mReadOnly);
 		if (mReadOnly || aEnd < aStart || aStart.mLine < 0
 			|| aEnd.mLine < 0

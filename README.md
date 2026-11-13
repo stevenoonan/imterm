@@ -99,6 +99,7 @@ wide-character layout and font fallback are not supported.
 - [Settings format, validation, and recovery](docs/configuration.md)
 - [Capture session ownership, connection states, and I/O](docs/capture-session.md)
 - [Terminal view components, input, and selection](docs/terminal-view.md)
+- [Application lifetime and module architecture](docs/architecture.md)
 - [Refactoring roadmap](REFACTORING_PLAN.md)
 
 Written in C++20 using [Dear ImGui](https://github.com/ocornut/imgui), GLFW, and

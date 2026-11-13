@@ -18,7 +18,6 @@ struct Coordinates
 		assert(aLine >= 0);
 		assert(aColumn >= 0);
 	}
-	static Coordinates Invalid() { static Coordinates invalid(-1, -1); return invalid; }
 
 	bool operator ==(const Coordinates& o) const
 	{

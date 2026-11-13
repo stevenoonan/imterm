@@ -152,7 +152,85 @@ libFuzzer to retain inputs between runs.
   actual keyboard/mouse events, clipboard actions, selection/color draw passes,
   cursor blink/focus states, and independent mouse/keyboard enable flags.
 
-Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on other compilers
-for `imterm_core`, `imterm_session`, `imterm_view`, and their tests. They are
-enabled by default and can be controlled with `IMTERM_ENABLE_WARNINGS`.
-Warnings are not treated as errors.
+Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on GCC/Clang
+for every first-party target, including the application. They are enabled by
+default through `IMTERM_ENABLE_WARNINGS`. `IMTERM_WARNINGS_AS_ERRORS=ON` enables
+the full warning policy plus `/WX` or `-Werror`; CI requires it. Third-party
+sources and headers are isolated from that policy.
+
+## Graphics lifecycle tests
+
+`IMTERM_ENABLE_GRAPHICS_TESTS=ON` adds the `ApplicationLifecycle` CTest entry.
+It uses the production application shell in a single process, injects exceptions
+after each startup resource and during rendering/resize, checks partial
+swapchain-image cleanup and restart, and repeatedly launches, renders, resizes,
+and shuts down. It also checks that the ImGui context is released and INI state
+is saved to a temporary directory. These tests require a display and Vulkan
+driver; ordinary core/session/UI tests remain headless.
+
+```sh
+cmake --preset conan-debug -DIMTERM_ENABLE_GRAPHICS_TESTS=ON -DIMTERM_WARNINGS_AS_ERRORS=ON
+cmake --build --preset conan-debug
+ctest --preset conan-debug --output-on-failure -L graphics
+```
+
+Linux CI provides Xvfb, Mesa lavapipe, and Khronos validation layers. It sets
+`IMTERM_VALIDATE_VULKAN=1`; validation errors, including leaked Vulkan objects at
+teardown, fail the tests. No GPU or serial hardware is needed.
+To reproduce that environment, install `xvfb`, `mesa-vulkan-drivers`, and optionally
+`vulkan-validationlayers`, point
+`VK_ICD_FILENAMES` at your distribution's lavapipe JSON under
+`/usr/share/vulkan/icd.d`, and run CTest under `xvfb-run -a`. Clear
+`WAYLAND_DISPLAY` and set `XDG_SESSION_TYPE=x11` for an Xvfb run if needed.
+Set `IMTERM_VALIDATE_VULKAN=1` to require the validation layer in lifecycle tests.
+For manual Vulkan diagnostics, install your platform's validation layers and
+set `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` before launch.
+
+## Continuous integration
+
+Every push (all branches and tags), pull request, merge-queue group, and manual
+workflow run executes this matrix:
+
+| Platform / compiler | Configurations | GLFW/ImGui dependencies | Tests |
+| --- | --- | --- | --- |
+| Ubuntu 24.04 / GCC | Debug, Release | Conan, submodules | Core, session, headless UI, Linux PTY, Vulkan lifecycle |
+| Ubuntu 24.04 / Clang | Debug, Release | Conan, submodules | Core, session, headless UI, Linux PTY, Vulkan lifecycle |
+| Windows 2022 / MSVC x64 | Debug, Release | Conan, submodules | Core, session, headless UI |
+| Ubuntu 24.04 / Clang sanitizers | Debug | Submodules | Core, session, UI, PTY under ASan/UBSan; 30-second seeded libFuzzer run |
+
+This is 12 ordinary build/test jobs plus a sanitizer/fuzz job and a stable `CI`
+summary check that requires every job to succeed. `CI` can be selected as the
+required branch-protection status. Push triggers also
+cover the resulting merge commit. `merge_group` covers GitHub's merge queue.
+Jobs do not cancel siblings after one failure. CTest timeouts prevent hangs,
+empty test discovery is an error, and JUnit/CTest logs and configure diagnostics
+are uploaded even on failure. The sanitizer job also uploads its fuzz corpus
+and any crash inputs. The workflow uses a read-only repository token and installs
+Conan as the runner user; only Linux system-package installation uses sudo.
+
+The cross-platform driver can reproduce one job in a fresh checkout. It needs
+Conan 2, CMake 3.24+, Ninja, and initialized submodules for a submodule job. Set
+`CC`/`CXX` for GCC or Clang, or run from an MSVC x64 developer shell:
+
+```sh
+python scripts/ci.py --configuration Debug --dependencies conan
+python scripts/ci.py --configuration Release --dependencies submodules
+# Linux: run under xvfb-run and select lavapipe as above.
+xvfb-run -a python scripts/ci.py --configuration Debug --graphics
+# With Clang selected:
+python scripts/ci.py --sanitizers --fuzz --dependencies submodules
+```
+
+The driver generates a separate `imterm-ci` Conan profile and writes only
+`out/ci` and `out/ci-deps` plus Conan's normal cache and generated ImGui bindings.
+Remove those two build directories before changing compilers. Add
+`--install-system-packages` to explicitly allow Conan to install system
+prerequisites through sudo on Linux; it is unnecessary when already installed.
+The normal developer presets are preserved.
+
+Windows GUI launch/resize/DPI testing, Wayland compositor behavior, and physical
+UART/modem-line operations remain manual smoke checks. The automated Linux PTY
+checks cover connection, transfer, reconfiguration, hangup/reconnect and logging,
+but do not represent physical DTR/RTS/CTS/DSR/DCD behavior. Follow the
+[full smoke checklist](../REFACTORING_PLAN.md#manual-smoke-test-checklist) before
+release; CI cannot certify those hardware-dependent checks.

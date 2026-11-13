@@ -23,14 +23,14 @@ void TerminalView::Render(const char* title, const ImVec2& size, bool border)
         if (mTopVisibleLine) {
             const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
             ImGui::SetNextWindowContentSize({0, static_cast<float>(mData->GetLineCount()) * lineHeight});
-            ImGui::SetNextWindowScroll({-1, *mTopVisibleLine * lineHeight});
+            ImGui::SetNextWindowScroll({-1, static_cast<float>(*mTopVisibleLine) * lineHeight});
             mTopVisibleLine.reset();
         }
         ImGui::BeginChild(title, size, border, ImGuiWindowFlags_HorizontalScrollbar
             | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
     }
     else if (mTopVisibleLine) {
-        ImGui::SetScrollY(*mTopVisibleLine * ImGui::GetTextLineHeightWithSpacing());
+        ImGui::SetScrollY(static_cast<float>(*mTopVisibleLine) * ImGui::GetTextLineHeightWithSpacing());
         mTopVisibleLine.reset();
     }
     if (mScrollToTop) { ImGui::SetScrollY(0); mScrollToTop = false; }
@@ -101,7 +101,7 @@ void TerminalView::ApplyReveal()
     const auto position = mSelection.Clamp(*mRevealPosition);
     const auto scroll = RevealTerminalPoint({mGeometry.mScrollX, mGeometry.mScrollY},
         mGeometry.mContentRegionAvail.x, mGeometry.mContentRegionAvail.y,
-        mGeometry.mTextStart + mRenderer.TextDistance(*mData, position), position.mLine * mGeometry.mCellAdvance.y,
+        mGeometry.mTextStart + mRenderer.TextDistance(*mData, position), static_cast<float>(position.mLine) * mGeometry.mCellAdvance.y,
         mGeometry.mCellAdvance.x, mGeometry.mCellAdvance.y);
     ImGui::SetScrollX(scroll.x);
     ImGui::SetScrollY(scroll.y);

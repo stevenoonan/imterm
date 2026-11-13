@@ -210,7 +210,7 @@ TerminalRenderStats TerminalRenderer::Draw(const TerminalData& data, const Termi
     const auto colors = ApplyAlpha(palette);
     float longest = layout.mTextStart;
     for (int line = layout.mFirstVisibleLineNo; line <= layout.mLastVisibleLineNo; ++line) {
-        const ImVec2 origin(layout.mCursorScreenPos.x, layout.mCursorScreenPos.y + line * layout.mCellAdvance.y);
+        const ImVec2 origin(layout.mCursorScreenPos.x, layout.mCursorScreenPos.y + static_cast<float>(line) * layout.mCellAdvance.y);
         longest = std::max(longest, layout.mTextStart + TextDistance(data, {line, data.GetLineMaxColumn(line)}));
         stats.selectionRectangles += DrawSelection(data, selection, line, origin, layout, colors);
         if (options.LineNumbers || options.TimeStamps) {

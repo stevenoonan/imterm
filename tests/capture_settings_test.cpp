@@ -52,7 +52,7 @@ TEST_F(CaptureSettingsTest, MalformedTomlUsesDefaultsAndPreservesOriginalUntilSa
     EXPECT_EQ(imterm::test::ReadFile(path), original);
     ASSERT_TRUE(settings.Save()) << settings.GetWriteError();
     EXPECT_EQ(imterm::test::ReadFile(path.string() + ".bak"), original);
-    EXPECT_NO_THROW(toml::parse_file(path.string()));
+    EXPECT_NO_THROW(static_cast<void>(toml::parse_file(path.string())));
     EXPECT_TRUE(settings.GetWarnings().empty());
 }
 

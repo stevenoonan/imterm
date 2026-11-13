@@ -67,6 +67,14 @@ TEST(TerminalDataTest, DeletesAcrossMultipleLines)
     EXPECT_EQ(data.GetTextLines(), std::vector<std::string>({"ahi"}));
 }
 
+TEST(TerminalDataTest, ReversedDeletionRangeLeavesTextUnchanged)
+{
+    imterm::TerminalData data;
+    data.SetText("abc\ndef");
+    data.DeleteRange(Coordinates(1, 2), Coordinates(0, 1));
+    EXPECT_EQ(data.GetTextLines(), std::vector<std::string>({"abc", "def"}));
+}
+
 TEST(TerminalDataTest, UnicodeColumnsAndSelectionRemainDistinctFromBytes)
 {
     imterm::TerminalData data;
