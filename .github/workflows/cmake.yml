@@ -52,8 +52,11 @@ jobs:
         if: runner.os == 'Linux'
         env:
           IMTERM_VALIDATE_VULKAN: '1'
+        # Lifecycle tests repeatedly disconnect the last X11 client. Prevent
+        # Xvfb from resetting while the next GLFW initialization connects.
         run: >-
-          xvfb-run -a python scripts/ci.py
+          xvfb-run -a --server-args="-screen 0 1280x1024x24 -nolisten tcp -noreset"
+          python scripts/ci.py
           --configuration ${{ matrix.configuration }}
           --dependencies ${{ matrix.dependencies }}
           --graphics --lavapipe --install-system-packages

@@ -182,7 +182,9 @@ Linux CI provides Xvfb, Mesa lavapipe, and Khronos validation layers. It sets
 teardown, fail the tests. No GPU or serial hardware is needed.
 To reproduce that environment, install `xvfb`, `mesa-vulkan-drivers`, and optionally
 `vulkan-validationlayers`, then run the CI driver with `--graphics --lavapipe`
-under `xvfb-run -a`. The driver discovers the installed `lvp_icd.json` or legacy
+under `xvfb-run -a --server-args="-screen 0 1280x1024x24 -nolisten tcp -noreset"`.
+`-noreset` keeps the X server available while lifecycle tests repeatedly close
+and reopen the last display connection. The driver discovers the installed `lvp_icd.json` or legacy
 `lvp_icd.<architecture>.json` and sets both `VK_DRIVER_FILES` and
 `VK_ICD_FILENAMES`. A missing manifest fails before dependency installation with
 an actionable diagnostic. When running CTest directly, set these variables to
@@ -222,7 +224,8 @@ Conan 2, CMake 3.24+, Ninja, and initialized submodules for a submodule job. Set
 python scripts/ci.py --configuration Debug --dependencies conan
 python scripts/ci.py --configuration Release --dependencies submodules
 # Linux: run under Xvfb with the installed Mesa CPU driver.
-xvfb-run -a python scripts/ci.py --configuration Debug --graphics --lavapipe
+xvfb-run -a --server-args="-screen 0 1280x1024x24 -nolisten tcp -noreset" \
+  python scripts/ci.py --configuration Debug --graphics --lavapipe
 # With Clang selected:
 python scripts/ci.py --sanitizers --fuzz --dependencies submodules
 ```
