@@ -129,11 +129,14 @@ libFuzzer to retain inputs between runs.
 - Encoding UI tests exercise ImGui code points, pass-through paste, Unicode
   selection/copy, invalid-byte rendering, and Linux pseudo-terminal loopback
   with single-byte serial reads.
-- Logger tests use unique temporary directories and require no user files.
+- Logger tests use unique temporary directories and require no user files. Text
+  logs are compared in native text mode (LF on Linux, CRLF on Windows); raw
+  capture assertions remain byte-exact.
 - Configuration tests cover explicit default creation, legacy files, malformed
   and partial TOML, future versions, strict enum/boolean/numeric validation,
   oversized input, every setting's round trip, failed saves, backup recovery,
-  and log directory validation.
+  and log directory validation. Preservation tests write byte-exact LF and CRLF
+  fixtures and compare the original/backup bytes without text translation.
 - Capture-session tests cover open/read/write failures, short writes, retry
   timing, cancellation, repeated reconfiguration, modem controls, log/raw flush,
   and deterministic worker shutdown. Linux PTY tests exercise native hangup and
@@ -178,9 +181,14 @@ Linux CI provides Xvfb, Mesa lavapipe, and Khronos validation layers. It sets
 `IMTERM_VALIDATE_VULKAN=1`; validation errors, including leaked Vulkan objects at
 teardown, fail the tests. No GPU or serial hardware is needed.
 To reproduce that environment, install `xvfb`, `mesa-vulkan-drivers`, and optionally
-`vulkan-validationlayers`, point
-`VK_ICD_FILENAMES` at your distribution's lavapipe JSON under
-`/usr/share/vulkan/icd.d`, and run CTest under `xvfb-run -a`. Clear
+`vulkan-validationlayers`, then run the CI driver with `--graphics --lavapipe`
+under `xvfb-run -a --server-args="-screen 0 1280x1024x24 -nolisten tcp -noreset"`.
+`-noreset` keeps the X server available while lifecycle tests repeatedly close
+and reopen the last display connection. The driver discovers the installed `lvp_icd.json` or legacy
+`lvp_icd.<architecture>.json` and sets both `VK_DRIVER_FILES` and
+`VK_ICD_FILENAMES`. A missing manifest fails before dependency installation with
+an actionable diagnostic. When running CTest directly, set these variables to
+the actual manifest under `/usr/share/vulkan/icd.d`. Clear
 `WAYLAND_DISPLAY` and set `XDG_SESSION_TYPE=x11` for an Xvfb run if needed.
 Set `IMTERM_VALIDATE_VULKAN=1` to require the validation layer in lifecycle tests.
 For manual Vulkan diagnostics, install your platform's validation layers and
@@ -215,11 +223,16 @@ Conan 2, CMake 3.24+, Ninja, and initialized submodules for a submodule job. Set
 ```sh
 python scripts/ci.py --configuration Debug --dependencies conan
 python scripts/ci.py --configuration Release --dependencies submodules
-# Linux: run under xvfb-run and select lavapipe as above.
-xvfb-run -a python scripts/ci.py --configuration Debug --graphics
+# Linux: run under Xvfb with the installed Mesa CPU driver.
+xvfb-run -a --server-args="-screen 0 1280x1024x24 -nolisten tcp -noreset" \
+  python scripts/ci.py --configuration Debug --graphics --lavapipe
 # With Clang selected:
 python scripts/ci.py --sanitizers --fuzz --dependencies submodules
 ```
+
+Each driver invocation first runs the Python CI-driver regression tests, including
+current/legacy lavapipe filenames and missing-driver diagnostics. These can also
+be run without Conan using `python -m unittest discover -s tests -p test_ci_driver.py`.
 
 The driver generates a separate `imterm-ci` Conan profile and writes only
 `out/ci` and `out/ci-deps` plus Conan's normal cache and generated ImGui bindings.

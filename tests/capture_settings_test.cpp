@@ -18,7 +18,7 @@ protected:
     imterm::test::TemporaryDirectory directory;
     std::filesystem::path path = directory.Path() / "settings.toml";
     CaptureSettings settings{path};
-    void Write(const std::string& text) { std::ofstream(path) << text; }
+    void Write(const std::string& text) { std::ofstream(path, std::ios::binary) << text; }
 };
 
 TEST_F(CaptureSettingsTest, ExplicitLoadCreatesValidDefaults)
@@ -44,16 +44,19 @@ TEST_F(CaptureSettingsTest, ExplicitLoadCreatesValidDefaults)
 
 TEST_F(CaptureSettingsTest, MalformedTomlUsesDefaultsAndPreservesOriginalUntilSave)
 {
-    const std::string original = "[default.serial\nbaud = garbage\n";
-    Write(original);
-    EXPECT_NO_THROW(settings.Load());
-    EXPECT_FALSE(settings.GetWarnings().empty());
-    EXPECT_EQ(settings.Get().serial.baudrate, 115200u);
-    EXPECT_EQ(imterm::test::ReadFile(path), original);
-    ASSERT_TRUE(settings.Save()) << settings.GetWriteError();
-    EXPECT_EQ(imterm::test::ReadFile(path.string() + ".bak"), original);
-    EXPECT_NO_THROW(static_cast<void>(toml::parse_file(path.string())));
-    EXPECT_TRUE(settings.GetWarnings().empty());
+    for (const std::string newline : {"\n", "\r\n"}) {
+        SCOPED_TRACE(newline == "\n" ? "LF" : "CRLF");
+        const std::string original = "[default.serial" + newline + "baud = garbage" + newline;
+        Write(original);
+        EXPECT_NO_THROW(settings.Load());
+        EXPECT_FALSE(settings.GetWarnings().empty());
+        EXPECT_EQ(settings.Get().serial.baudrate, 115200u);
+        EXPECT_EQ(imterm::test::ReadFile(path), original);
+        ASSERT_TRUE(settings.Save()) << settings.GetWriteError();
+        EXPECT_EQ(imterm::test::ReadFile(path.string() + ".bak"), original);
+        EXPECT_NO_THROW(static_cast<void>(toml::parse_file(path.string())));
+        EXPECT_TRUE(settings.GetWarnings().empty());
+    }
 }
 
 TEST_F(CaptureSettingsTest, MissingKeysAndWrongTableTypesAreSafe)
@@ -123,17 +126,20 @@ TEST_F(CaptureSettingsTest, ExtremeBaudAndTextValuesCannotOverflowUiBuffers)
 
 TEST_F(CaptureSettingsTest, FutureVersionUsesDefaultsAndCannotBeOverwritten)
 {
-    const std::string original = "version = 999\n[default.serial]\nbaud = 9600\n";
-    Write(original);
-    settings.Load();
-    EXPECT_EQ(settings.Get().serial.baudrate, 115200u);
-    EXPECT_FALSE(settings.GetWarnings().empty());
-    auto values = settings.Get();
-    values.serial.baudrate = 57600;
-    EXPECT_TRUE(settings.Set(values));
-    EXPECT_FALSE(settings.Save());
-    EXPECT_NE(settings.GetWriteError().find("newer version"), std::string::npos);
-    EXPECT_EQ(imterm::test::ReadFile(path), original);
+    for (const std::string newline : {"\n", "\r\n"}) {
+        SCOPED_TRACE(newline == "\n" ? "LF" : "CRLF");
+        const std::string original = "version = 999" + newline + "[default.serial]" + newline + "baud = 9600" + newline;
+        Write(original);
+        settings.Load();
+        EXPECT_EQ(settings.Get().serial.baudrate, 115200u);
+        EXPECT_FALSE(settings.GetWarnings().empty());
+        auto values = settings.Get();
+        values.serial.baudrate = 57600;
+        EXPECT_TRUE(settings.Set(values));
+        EXPECT_FALSE(settings.Save());
+        EXPECT_NE(settings.GetWriteError().find("newer version"), std::string::npos);
+        EXPECT_EQ(imterm::test::ReadFile(path), original);
+    }
 }
 
 TEST_F(CaptureSettingsTest, EverySettingRoundTripsWithCanonicalTypes)

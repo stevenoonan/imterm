@@ -488,7 +488,7 @@ TEST_F(CaptureSessionTest, ShutdownFlushesLogsAndRawBytesAndReleasesTransport)
     session.Shutdown();
     session.Shutdown();
     EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "raw.bin"), "complete\r\npartial\xFF\xE2");
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "loopback.log"),
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "loopback.log"),
         "complete\npartial\xEF\xBF\xBD\xEF\xBF\xBD\n");
     EXPECT_EQ(device->alive, 0);
     EXPECT_FALSE(session.Connect({"loopback"}));

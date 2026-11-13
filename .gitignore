@@ -9,6 +9,7 @@
 /CMakeUserPresets.json
 /deps/conan
 /.venv
+__pycache__/
 imterm.ini
 imterm.toml
 imterm.toml.bak

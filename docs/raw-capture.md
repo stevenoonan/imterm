@@ -20,7 +20,8 @@ Raw capture records received bytes as the session drains its RX queue, before
 ANSI parsing, UTF-8 replacement, or newline handling. It retains escape sequences,
 NUL, CR/LF, invalid UTF-8, and incomplete characters exactly as received, with no
 timestamps, line numbers, or transmitted keyboard/response bytes. Normal text
-logging is separate. Capture continues through terminal Clear, disconnects,
+logging is separate: text logs use UTF-8 and native line endings (LF on Linux,
+CRLF on Windows). Capture continues through terminal Clear, disconnects,
 reconnects, and port changes until stopped or the application exits; stop it
 before switching devices if you want separate files. A new capture replaces the
 selected file after the save dialog's overwrite confirmation. A write error

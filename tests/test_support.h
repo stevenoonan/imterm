@@ -42,6 +42,16 @@ inline std::string ReadFile(const std::filesystem::path& path)
         std::istreambuf_iterator<char>());
 }
 
+// Text logs use the host's newline convention. Keep ReadFile byte-exact for
+// raw captures and configuration-preservation assertions.
+inline std::string ReadTextFile(const std::filesystem::path& path)
+{
+    std::ifstream input(path);
+    return std::string(
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>());
+}
+
 class TemporaryDirectory {
 public:
     TemporaryDirectory()
