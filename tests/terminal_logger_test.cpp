@@ -26,7 +26,7 @@ TEST(TerminalLoggerTest, WritesConfiguredLineFormat)
     logger.Log(line, 7);
     logger.Close();
 
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "session.log"),
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "session.log"),
         "7 ok\n");
 }
 
@@ -45,7 +45,7 @@ TEST(TerminalLoggerTest, LogsNormalizedUtf8IncludingTruncatedStreamEnd)
     state.Input(imterm::test::Bytes("\xC3\xA9\xF0\x9F\x98\x80\xFF\n\xE2\x82"));
     state.FinishInput();
     logger->Close();
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "unicode.log"),
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "unicode.log"),
         "\xC3\xA9\xF0\x9F\x98\x80\xEF\xBF\xBD\n\xEF\xBF\xBD\xEF\xBF\xBD\n");
 }
 
@@ -66,7 +66,7 @@ TEST(TerminalLoggerTest, ClosingFlushesAnIncompleteTerminalLine)
 
         logger->Close();
 
-        EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "partial.log"),
+        EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "partial.log"),
             "x\n");
     }
 }
@@ -89,7 +89,7 @@ TEST(TerminalLoggerTest, CompletingALineLogsThroughTerminalData)
 
         state.Input(imterm::test::Bytes("complete\n"));
 
-        EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "complete.log"),
+        EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "complete.log"),
             "complete\n");
     }
 }
@@ -115,7 +115,7 @@ TEST(TerminalLoggerTest, CursorCreatedRowsKeepThePendingLogLineValid)
         logger->Close();
     }
 
-    EXPECT_NE(imterm::test::ReadFile(directory.Path() / "cursor-rows.log")
+    EXPECT_NE(imterm::test::ReadTextFile(directory.Path() / "cursor-rows.log")
                   .find("X\n"),
         std::string::npos);
 }
@@ -138,7 +138,7 @@ TEST(TerminalLoggerTest, BufferResetFlushesAndReestablishesThePendingLine)
         logger->Close();
     }
 
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "reset.log"),
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "reset.log"),
         "a\nreplacement\n");
 }
 
@@ -161,7 +161,7 @@ TEST(TerminalLoggerTest, LoggingContinuesAfterAnExplicitClose)
     state.Input(imterm::test::Bytes("\nsecond"));
     logger->Close();
 
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "reconnect.log"),
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "reconnect.log"),
         "first\nsecond\n");
 }
 
@@ -231,8 +231,8 @@ TEST(TerminalLoggerTest, MultipleLoggerInstancesRemainIndependent)
         secondLogger->Close();
     }
 
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "first.log"), "A\n");
-    EXPECT_EQ(imterm::test::ReadFile(directory.Path() / "second.log"), "B\n");
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "first.log"), "A\n");
+    EXPECT_EQ(imterm::test::ReadTextFile(directory.Path() / "second.log"), "B\n");
 }
 
 } // namespace

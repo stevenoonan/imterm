@@ -51,14 +51,12 @@ jobs:
       - name: Build and test Linux (including native PTY and Vulkan lifecycle)
         if: runner.os == 'Linux'
         env:
-          # Ubuntu 24.04 Mesa's CPU driver, independent of runner GPU hardware.
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           IMTERM_VALIDATE_VULKAN: '1'
         run: >-
           xvfb-run -a python scripts/ci.py
           --configuration ${{ matrix.configuration }}
           --dependencies ${{ matrix.dependencies }}
-          --graphics --install-system-packages
+          --graphics --lavapipe --install-system-packages
       - name: Build and test Windows
         if: runner.os == 'Windows'
         run: >-

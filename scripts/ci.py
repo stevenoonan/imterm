@@ -3,11 +3,25 @@
 
 import argparse
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def find_lavapipe(directory=Path("/usr/share/vulkan/icd.d"), architecture=None):
+    """Find Mesa's current or architecture-qualified legacy driver manifest."""
+    architecture = architecture or platform.machine()
+    for name in ("lvp_icd.json", f"lvp_icd.{architecture}.json"):
+        manifest = directory / name
+        if manifest.is_file():
+            return manifest.resolve()
+    raise RuntimeError(
+        f"No lavapipe Vulkan manifest in {directory}; install mesa-vulkan-drivers. "
+        f"Expected lvp_icd.json or lvp_icd.{architecture}.json."
+    )
 
 
 def run(*args):
@@ -21,16 +35,29 @@ def main():
     parser.add_argument("--dependencies", choices=("conan", "submodules"), default="conan")
     parser.add_argument("--sanitizers", action="store_true")
     parser.add_argument("--graphics", action="store_true")
+    parser.add_argument("--lavapipe", action="store_true",
+                        help="Select the installed Mesa CPU driver for Linux graphics tests")
     parser.add_argument("--fuzz", action="store_true")
     parser.add_argument("--install-system-packages", action="store_true")
     parser.add_argument("--parallel", type=int, default=2)
     args = parser.parse_args()
     if args.parallel < 1:
         parser.error("--parallel must be positive")
+    if args.lavapipe:
+        if not args.graphics or sys.platform != "linux":
+            parser.error("--lavapipe requires --graphics on Linux")
+        manifest = find_lavapipe()
+        print("Vulkan software driver:", manifest, flush=True)
+        # Set both names so modern and older loaders select the same driver,
+        # even if the caller already configured one of these overrides.
+        os.environ["VK_DRIVER_FILES"] = str(manifest)
+        os.environ["VK_ICD_FILENAMES"] = str(manifest)
     if args.dependencies == "submodules":
         for file in ("deps/glfw/CMakeLists.txt", "deps/imgui/imgui.cpp"):
             if not (ROOT / file).is_file():
                 parser.error("Initialize submodules with git submodule update --init --recursive")
+
+    run(sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_ci_driver.py")
 
     # Keep every compiler/configuration invocation in a separate checkout/build.
     # Conan's environment selects the compiler (CC/CXX or MSVC developer shell).

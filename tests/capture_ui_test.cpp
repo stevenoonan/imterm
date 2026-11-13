@@ -367,7 +367,7 @@ TEST_F(CaptureUiTest, NativePtySmokeAppliesSavedFlowControlNewlinesAndLogDirecto
     EXPECT_EQ(imterm::test::LineText(capture->GetSession().GetData()->GetLine(1)), "second");
     capture->Shutdown();
     const auto log = values.logPath / (std::filesystem::path(values.serial.port).filename().string() + ".log");
-    EXPECT_EQ(imterm::test::ReadFile(log), "first\nsecond\n");
+    EXPECT_EQ(imterm::test::ReadTextFile(log), "first\nsecond\n");
 }
 #endif
 } // namespace
