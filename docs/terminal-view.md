@@ -3,7 +3,7 @@
 `TerminalView` coordinates the view components and the platform clipboard. It
 retains the session's shared data/state references as an adapter for Clear,
 viewport-size reporting, and querying the device cursor. Parsing, input-stream
-lifetime, logging, and serial transport remain with the core/session. The
+lifetime, logging, and serial transport belong to the core/session. The
 renderer, selection model, keyboard policy, theme, and viewport calculations
 neither parse device input nor own transport behavior.
 
@@ -25,10 +25,9 @@ library depends on GLFW, Vulkan, or serial I/O.
 
 Each frame first obtains a complete `TerminalRenderGeometry` from layout, then
 handles interaction, paints, and applies pending reveal requests. Hit testing and
-page navigation therefore use the current font, margins, and scroll position.
-The previous frame's partially initialized geometry is never an input to layout.
-Zoom anchoring still supplies the buffer height and desired scroll before
-`BeginChild`, preserving the existing first-frame anchor behavior.
+page navigation use the current font, margins, and scroll position.
+Zoom anchoring supplies the buffer height and desired scroll before
+`BeginChild`, keeping the top visible line stable across zoom changes.
 
 The geometry reports the content origin, first/last visible rows, total rows,
 cell metrics, text margin, viewport dimensions, and first visible text position.
@@ -60,13 +59,14 @@ Vertical movement preserves the preferred column through shorter lines.
 
 | Key/action | Result |
 | --- | --- |
-| Delete, Backspace, Enter, Tab | Existing device byte sequences |
-| Arrow keys, Home, End | Existing device navigation sequences |
+| Delete, Backspace, Enter, Tab | `ESC[3~`, `7F`, LF (`0A`), and TAB (`09`), respectively |
+| Arrow keys | `ESC[A`, `ESC[B`, `ESC[C`, `ESC[D` for up, down, right, left |
+| Home, End | `ESC[1~`, `ESC[4~` |
 | Page Up/Down | Local UI caret/page navigation; Shift extends selection |
 | Ctrl/Cmd+Home/End | Local top/bottom navigation; Shift extends selection |
 | Ctrl/Cmd+Insert | Copy |
-| Shift+Insert or Ctrl/Cmd+V | Paste, with no additional control byte |
-| Ctrl/Cmd+A | Select all, with no additional control byte |
+| Shift+Insert or Ctrl/Cmd+V | Paste clipboard bytes |
+| Ctrl/Cmd+A | Select all |
 | Ctrl/Cmd+F, zoom shortcuts | Reserved for the capture controller |
 | Ctrl/Cmd+C | Device interrupt byte `03` |
 | Ctrl/Cmd+Z | Device control byte `1A` |
@@ -74,21 +74,19 @@ Vertical movement preserves the preferred column through shorter lines.
 The ImGui adapter normalizes the platform shortcut modifier before resolving a
 key. A physical key produces one action. Alt/alternate combinations do not emit
 alphabetic control bytes; ordinary text events still support AltGr input.
-The existing single-scalar cell model, font-fallback limitations, and supported
-protocol commands are unchanged; see [terminal semantics](terminal-semantics.md).
+Each Unicode scalar occupies one logical cell. See
+[terminal semantics](terminal-semantics.md) for the supported protocol commands
+and font/layout limitations.
 
-## Removed and retained APIs
+## View API
 
-The copied editor identifiers/keywords/regex machinery, breakpoints, error
-markers, editing/cut/delete helpers, incomplete declarations, preprocessor glyph
-flag, syntax-color palette roles, obsolete cursor-change flags, and scratch
-render state are removed. The theme tables retain only terminal/UI color roles
-and ANSI colors. Palette indices are internal and are not a persisted format.
+The view exposes selection/navigation, clipboard actions, theme selection,
+optional whitespace visualization, and embedding without an ImGui child.
+Mouse and keyboard handling can be enabled independently.
 
-The outbound byte queue remains necessary for the session boundary. Read-only
-caret/navigation methods, theme selection, optional whitespace visualization,
-and embedding without an ImGui child remain supported view primitives. Mouse
-and keyboard enable accessors now reflect their respective flags.
+An outbound byte queue carries keyboard and paste input to the session.
+Theme tables contain terminal/UI color roles and ANSI colors; palette indices
+are internal and are not a persisted format.
 
 ## Smoke checklist
 
@@ -103,7 +101,6 @@ scale with the same text:
 5. Confirm Ctrl+V/A do not also transmit control bytes, while Ctrl+C/Z do.
 6. Clear, resize, reconnect, and close normally.
 
-Headless tests exercise the layout/draw state and actual ImGui input events. A
-native PTY smoke additionally verifies transport byte round trips. CPU-rendered
-captures of the actual ImGui draw data allow isolated visual comparison without
-changing the application's Vulkan backend.
+Headless tests exercise layout/draw state and actual ImGui input events.
+Linux PTY tests verify transport byte round trips. Use the graphical application
+for visual checks of font quality, margins, colors, and DPI scaling.

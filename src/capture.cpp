@@ -547,22 +547,6 @@ struct Capture::Impl {
                 OpenFind();
             }
 
-            if (ImGui::BeginMenu(raw_capture.IsActive() ? "Raw Capture On" : "Raw Capture")) {
-                if (ImGui::MenuItem("Start...", nullptr, false, !raw_capture.IsActive())) {
-                    OpenRawCaptureDialog();
-                }
-                if (ImGui::MenuItem("Stop", nullptr, false, raw_capture.IsActive())) {
-                    StopRawCapture();
-                }
-                ImGui::Separator();
-                ImGui::TextUnformatted("Received bytes, unchanged. No timestamps or TX.");
-                if (!raw_capture.GetPath().empty()) {
-                    ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
-                    ImGui::TextUnformatted(raw_capture.GetPath().string().c_str());
-                }
-                ImGui::EndMenu();
-            }
-            
             if (ImGui::BeginMenu("Options")) {
 
 
@@ -657,6 +641,22 @@ struct Capture::Impl {
                     ImGui::EndMenu();
                 }
 
+                if (ImGui::BeginMenu(raw_capture.IsActive() ? "Raw Capture On" : "Raw Capture")) {
+                    if (ImGui::MenuItem("Start...", nullptr, false, !raw_capture.IsActive())) {
+                        OpenRawCaptureDialog();
+                    }
+                    if (ImGui::MenuItem("Stop", nullptr, false, raw_capture.IsActive())) {
+                        StopRawCapture();
+                    }
+                    ImGui::Separator();
+                    ImGui::TextUnformatted("Received bytes, unchanged. No timestamps or TX.");
+                    if (!raw_capture.GetPath().empty()) {
+                        ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
+                        ImGui::TextUnformatted(raw_capture.GetPath().string().c_str());
+                    }
+                    ImGui::EndMenu();
+                }
+
                 ImGui::EndMenu();
             }
             
@@ -734,10 +734,9 @@ struct Capture::Impl {
             if (!text->empty())
                 status_height += ImGui::CalcTextSize(text->c_str(), nullptr, false, wrap_width).y + style.ItemSpacing.y;
         }
-        const int lines = raw_capture.GetError().empty() ? 13 : 14;
         ImGui::OpenPopup("Setup");
         ImGui::SetNextWindowSize(ImVec2(window_width,
-            layout.line_height * lines + layout.extra_vertical_spacing + status_height), ImGuiCond_Always);
+            layout.line_height * 12 + layout.extra_vertical_spacing + status_height), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         if (!ImGui::BeginPopupModal("Setup", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
 
@@ -801,19 +800,6 @@ struct Capture::Impl {
             if (log_path_dialog.IsOk()) draft.logPath = log_path_dialog.GetCurrentPath();
             log_path_dialog.Close();
         }
-        if (ImGui::Button(raw_capture.IsActive() ? "Stop raw capture" : "Start raw capture...")) {
-            if (raw_capture.IsActive()) StopRawCapture();
-            else OpenRawCaptureDialog();
-        }
-        if (raw_capture.IsActive()) {
-            ImGui::SameLine();
-            ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
-        }
-        if (!raw_capture.GetError().empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Raw capture error");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", raw_capture.GetError().c_str());
-        }
-        ShowRawCaptureDialog();
         ImGui::NewLine();
         if (ImGui::Button("Save", ImVec2(120, 0))) {
             const auto baud = CaptureSettings::ParseBaud(baud_text.data());

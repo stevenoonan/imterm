@@ -1,23 +1,28 @@
 # Testing imterm
 
-The core tests exercise `imterm_core` without creating an ImGui context.
-The UI tests create a headless ImGui context to check zoom and dialog geometry.
-Neither suite needs a display, Vulkan device, or serial connection. GoogleTest
-provides assertions and test discovery; CTest is the project-level runner.
-On Linux, the encoding UI suite also opens a local pseudo-terminal to check
-serial byte round trips; it needs `/dev/ptmx`, but no serial hardware.
+GoogleTest provides assertions and test discovery; CTest runs the suites.
+Core/session tests exercise terminal behavior, configuration, logging, and
+transport ownership. UI tests use a headless ImGui context for input, selection,
+rendering, zoom, and dialogs. Neither suite needs a display, Vulkan device, or
+physical serial hardware. Linux PTY tests open `/dev/ptmx` to check native serial
+I/O, hangup/reconnect, and byte round trips.
 
 ## Configure and run
 
-Install Debug and Release dependencies after changing `conanfile.py`:
+Complete the [build setup](../docs/building.md) first. From the repository root,
+activate your Conan environment if needed and generate dependencies/presets:
 
 ```sh
-PATH="$PWD/.venv/bin:$PATH" ./scripts/bootstrap.sh
+. .venv/bin/activate
+./scripts/bootstrap.sh
 ```
 
 ImGui must be built with `use_wchar32=True`, as configured in `conanfile.py`.
 The submodule build applies `IMGUI_USE_WCHAR32` to ImGui and
 its consumers too. Defining it only on the application causes an ABI mismatch.
+
+Skip activation if Conan is installed another way. Re-run bootstrap after
+changing `conanfile.py` or removing generated dependencies.
 
 The test wrapper configures, builds, and runs Debug tests by default:
 
@@ -42,7 +47,7 @@ The equivalent commands without the wrapper are shown below.
 Configure, build, and test Debug:
 
 ```sh
-cmake --preset conan-debug
+cmake --preset conan-debug -DBUILD_TESTING=ON
 cmake --build --preset conan-debug
 ctest --preset conan-debug --output-on-failure
 ```
@@ -50,7 +55,7 @@ ctest --preset conan-debug --output-on-failure
 Repeat for Release:
 
 ```sh
-cmake --preset conan-release
+cmake --preset conan-release -DBUILD_TESTING=ON
 cmake --build --preset conan-release
 ctest --preset conan-release --output-on-failure
 ```
@@ -58,24 +63,55 @@ ctest --preset conan-release --output-on-failure
 Tests are enabled through CMake's standard `BUILD_TESTING` option. A build that
 does not need tests may configure with `-DBUILD_TESTING=OFF`.
 
-## Sanitizers and fuzzing
+## Sanitizers
 
 AddressSanitizer and UndefinedBehaviorSanitizer can be enabled for the
-first-party targets in a separate GCC or Clang build:
+first-party targets with GCC or Clang. This Linux/Bash example uses the Debug
+dependencies and compiler from the build setup in a separate build directory:
 
 ```sh
-cmake --preset conan-debug -DIMTERM_ENABLE_SANITIZERS=ON
-cmake --build --preset conan-debug
-ctest --preset conan-debug --output-on-failure
+cmake -S . -B out/sanitizers \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/out/conan/build/Debug/generators/conan_toolchain.cmake" \
+  -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+  -DIMTERM_ENABLE_SANITIZERS=ON
+cmake --build out/sanitizers --parallel
+ctest --test-dir out/sanitizers --output-on-failure
 ```
 
-Clang users can also build the opt-in libFuzzer boundary target:
+On Linux, LeakSanitizer requires running outside a debugger or other ptrace-based
+wrapper. When changing compilers, generate matching Conan dependencies and use
+a fresh CMake build directory.
+
+## Fuzzing
+
+The opt-in libFuzzer target requires Clang with sanitizer/libFuzzer support.
+For Linux/Bash, install Clang and Ninja and create a dedicated Conan profile:
 
 ```sh
-cmake --preset conan-debug -DCMAKE_CXX_COMPILER=clang++ -DIMTERM_BUILD_FUZZER=ON
-cmake --build --preset conan-debug --target imterm_parser_fuzz
-./out/conan/build/Debug/imterm_parser_fuzz -max_total_time=60
+CC=clang CXX=clang++ conan profile detect --name=imterm-clang
+conan profile show -pr:h=imterm-clang
 ```
+
+Review the detected compiler/version, architecture, and standard library.
+Reuse the profile if it already exists. Install its dependencies separately;
+the empty `user_presets` setting keeps these from changing your normal presets:
+
+```sh
+CC=clang CXX=clang++ conan install . --output-folder=out/fuzz-deps --build=missing \
+  -pr:h=imterm-clang -s build_type=Debug \
+  -c tools.cmake.cmaketoolchain:generator=Ninja \
+  -c 'tools.cmake.cmaketoolchain:user_presets='
+cmake -S . -B out/fuzz -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/out/fuzz-deps/build/Debug/generators/conan_toolchain.cmake" \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=OFF -DIMTERM_BUILD_FUZZER=ON
+cmake --build out/fuzz --target imterm_parser_fuzz
+./out/fuzz/imterm_parser_fuzz -max_total_time=60
+```
+
+The target instruments its own copy of the parser/state core with coverage,
+AddressSanitizer, and UndefinedBehaviorSanitizer. Pass a corpus directory to
+libFuzzer to retain inputs between runs.
 
 ## Test categories
 
@@ -117,5 +153,6 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
   cursor blink/focus states, and independent mouse/keyboard enable flags.
 
 Warning checks use `/W4` on MSVC and `-Wall -Wextra -Wpedantic` on other compilers
-for `imterm_core`, `imterm_session`, `imterm_view`, and their tests. They are enabled by default and can be controlled
-with `IMTERM_ENABLE_WARNINGS`. Warnings are not treated as errors.
+for `imterm_core`, `imterm_session`, `imterm_view`, and their tests. They are
+enabled by default and can be controlled with `IMTERM_ENABLE_WARNINGS`.
+Warnings are not treated as errors.

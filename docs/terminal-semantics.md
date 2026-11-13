@@ -35,10 +35,29 @@ An omitted or zero cursor-movement parameter means one. Missing `H`, `f`, or
 cursor cell. Display erasure affects the visible viewport; `3J` removes only
 saved scrollback. Cursor-position reports use one-based screen coordinates.
 
-Supported formatting attributes are bold, dim, italic, underline, blinking,
-inverse, hidden, and strikethrough, with their standard individual resets.
-Supported colors are the normal foreground and background colors 30–37 and
-40–47 plus default foreground/background reset.
+The core tracks bold, dim, italic, underline, blinking, inverse, hidden, and
+strikethrough attributes, with their standard individual resets. It also tracks
+normal foreground/background colors 30–37 and 40–47 and default-color resets
+39/49. The GUI draws a single text color per glyph: inverse selects the tracked
+background as the text color. Separate character backgrounds and visual font
+styles such as bold or underline are not rendered. Bright-color SGR codes,
+256-color palettes, and true color are not supported.
+
+## Newlines and keyboard input
+
+**Options → New Line Mode** controls how received CR and LF affect the cursor:
+
+| Mode | Received CR | Received LF |
+| --- | --- | --- |
+| Strict | Move to column zero | Advance a row, keeping the column |
+| Add CR to LF | Move to column zero | Advance a row and move to column zero |
+| Add LF to CR | Advance a row and move to column zero | Advance a row, keeping the column |
+
+Use Strict for devices that send CRLF. These modes do not change transmitted
+bytes. Enter sends LF (`0A`), Backspace sends DEL (`7F`), and Tab sends TAB (`09`).
+Arrow keys send CSI navigation sequences; Home/End send `ESC[1~`/`ESC[4~`.
+The device console implements command editing, history, and tab completion.
+See [selection and input](terminal-view.md#selection-and-input) for local shortcuts.
 
 ## Text encoding
 
@@ -75,7 +94,9 @@ values are preserved, but each scalar is counted independently as one column.
 The selected font may display a missing-glyph box for unsupported characters;
 copy/paste still preserves their UTF-8 bytes.
 
+## Tab limitation
+
 Stored tabs render, select, and hit-test at expanded tab stops. The serial receive
-path currently advances its cursor by one column after storing a tab, so text
-following a received tab can overwrite the wrong cells. This pre-existing
-protocol issue is separate from the view components and remains a follow-up.
+path advances its cursor by one column after storing a tab, so text following a
+received tab can overwrite the wrong cells. Devices that need aligned columns
+should send spaces.

@@ -1,12 +1,22 @@
 # Diagnosing serial output with raw capture
 
-Choose **Raw Capture → Start...**, select a `.bin` file, then reproduce the
-output (for example, reset the board). To capture the first bytes on connection,
-use **Start raw capture...** in Setup before pressing **Save** to connect.
-The menu shows **Raw Capture On** while recording, with the byte count and file
-shown above the terminal. Choose **Raw Capture → Stop** when finished.
+Raw capture saves exact received serial bytes for diagnosing output, encoding,
+and ANSI-color issues. For readable logs, use **Options → Log** instead.
 
-Raw capture records received bytes immediately after the serial read, before
+## Start and stop
+
+1. Connect to the device.
+2. Choose **Options → Raw Capture → Start...** and select a `.bin` file.
+3. Reproduce the output, for example by resetting the board.
+4. Choose **Options → Raw Capture On → Stop** when finished.
+
+The menu shows **Raw Capture On** while recording. The byte count and filename
+appear above the terminal; hover the filename for its full path. Capture starts
+when you confirm the file dialog, so output received before that is not included.
+
+## What the file contains
+
+Raw capture records received bytes as the session drains its RX queue, before
 ANSI parsing, UTF-8 replacement, or newline handling. It retains escape sequences,
 NUL, CR/LF, invalid UTF-8, and incomplete characters exactly as received, with no
 timestamps, line numbers, or transmitted keyboard/response bytes. Normal text

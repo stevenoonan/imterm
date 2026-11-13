@@ -1,40 +1,33 @@
 # imterm Refactoring Plan
 
-This document turns the current code review into an incremental refactoring
-roadmap. The work is intentionally divided into milestones that can be merged,
-released, and used independently. No milestone should leave the application in
-a partially migrated state.
+This roadmap defines the architecture and completion requirements for imterm's
+refactoring work. Milestones 0–7 are complete; Milestone 8 covers the application
+shell and build cleanup. The linked guides describe the current implementation.
 
 ## Goals
 
-- Preserve imterm's current usefulness throughout the refactor.
-- Make serial/device input safe even when it is malformed or incomplete.
-- Separate terminal behavior from ImGui, serial-port, and Vulkan concerns.
-- Make resource ownership and application state explicit.
-- Establish automated tests before changing terminal semantics.
-- Keep Windows and Linux support working at milestone boundaries.
+- Keep the terminal usable at every milestone boundary.
+- Handle malformed and incomplete serial input safely.
+- Separate terminal behavior, transport, UI, and platform startup.
+- Give resources explicit owners and deterministic cleanup.
+- Cover behavior with automated tests and real-device or loopback smoke checks.
+- Support Windows and Linux.
 
-This plan is not a feature roadmap. Search, hexadecimal display, new transports,
-and other product features should normally wait until the foundations below are
-stable.
+Product features have their own scope; this roadmap concerns architecture,
+correctness, and maintainability.
 
-## Stability rule for every milestone
+## Completion requirements
 
-A milestone is complete only when all of the following are true:
+A milestone is complete when:
 
-- The Debug and Release configurations build from a clean build directory.
-- Existing user-visible features that are not explicitly changed by the
-  milestone still work.
-- New behavior is covered by automated tests where it can be tested without
-  hardware.
-- A manual smoke test has been completed with a real or loopback serial port.
-- No temporary compatibility code, disabled tests, or known crash regressions
-  remain undocumented.
-- The milestone can be reverted as a unit without requiring later milestones.
+- Debug and Release build from clean directories.
+- User-visible behavior matches its documented contract.
+- Automated tests cover behavior that does not require hardware.
+- A smoke check covers a real or loopback serial session.
+- Compatibility code, platform limitations, and known issues are documented.
+- The change is independently reviewable and revertible.
 
-If a milestone grows too large to satisfy this rule, split it into smaller
-mergeable slices. Prefer adapters and parallel implementations over a long-lived
-half-conversion.
+Split work into smaller mergeable pieces if needed. Keep each piece usable.
 
 ## Progress tracker
 
@@ -50,507 +43,121 @@ half-conversion.
 
 ## Milestone 0: Establish the safety net
 
-**Outcome:** The program behaves as it does today, but terminal logic can be
-tested independently and regressions can be detected before deeper changes.
+**Status:** Complete. [Testing guide](tests/README.md).
 
-**Expected size:** Small to medium.
+`imterm_core` provides terminal behavior independently of ImGui and serial I/O.
+GoogleTest suites run through CTest without a display or serial hardware.
+Coverage includes text, CR/LF modes, chunked escape sequences, colors, cursor
+movement, erasure, scrolling, logging, and keyboard byte mappings.
 
-### Scope
-
-- Create a first-party test target and integrate it with CTest.
-- Extract the existing terminal data, parser, state, and logger sources into a
-  library target that both the application and tests can link.
-- Add characterization tests for current behavior without trying to correct it
-  yet:
-  - ordinary text, CR, LF, CRLF, and each newline mode;
-  - escape sequences split across multiple input buffers;
-  - basic colors, cursor movement, erase commands, and status reports;
-  - scrolling when the terminal viewport is full;
-  - logging complete and incomplete lines;
-  - keyboard control-sequence mappings that are currently relied upon.
-- Add small binary fixtures or table-driven cases instead of tests coupled to
-  ImGui.
-- Enable a useful warning baseline for first-party targets. Record existing
-  warnings that cannot yet be enabled as errors.
-
-### Deliberately out of scope
-
-- Correcting ANSI behavior discovered by characterization tests.
-- Moving serial I/O off the UI thread.
-- Large class or ownership changes.
-
-### Completion gate
-
-- `ctest` runs without a display, Vulkan, or serial hardware.
-- The application still builds and launches normally.
-- Tests demonstrate chunked input, scrollback, logging, and terminal responses.
-- The current Debug build and a Release build pass.
+First-party core/session/view libraries and test targets enable warnings.
+Debug, Release, and opt-in sanitizer configurations support routine validation.
 
 ## Milestone 1: Harden the existing input pipeline
 
-**Outcome:** Arbitrary serial byte streams cannot read outside their buffers or
-terminate the program through expected parser errors. User-visible behavior is
-otherwise preserved.
+**Status:** Complete. [Protocol semantics](docs/terminal-semantics.md).
 
-**Expected size:** Medium.
+The input boundary uses bounded byte ranges, limits escape-sequence and numeric
+parsing, validates UTF-8, clamps cursor positions, and validates erase ranges.
+Unknown or malformed commands recover without throwing expected parser errors.
+The session reports unexpected terminal-processing failures.
 
-### Scope
-
-- Replace pointer-plus-implicit-length parsing with bounded byte ranges.
-- Make UTF-8 processing stop safely on truncated sequences.
-- Limit escape-sequence length, numeric argument length, argument count, and
-  numeric range.
-- Replace parser/state exceptions for unsupported or malformed terminal input
-  with explicit parse results or ignored-command results.
-- Clamp cursor rows and columns at both lower and upper bounds before indexing.
-- Validate erase ranges before constructing iterators.
-- Make unsupported escape sequences recover without swallowing unrelated text
-  indefinitely.
-- Catch unexpected processing failures at the capture boundary, report them,
-  and preserve the application session where safe.
-- Add regression tests for:
-  - every truncated UTF-8 prefix;
-  - oversized and overflowing CSI arguments;
-  - unknown SGR and CSI commands;
-  - large cursor-left/up/down/right values;
-  - malformed sequences split at every byte boundary;
-  - embedded NUL bytes.
-- Add a fuzz target for the parser/state input boundary if the available toolchain
-  supports it. It may remain an opt-in developer target.
-
-### Deliberately out of scope
-
-- Full Unicode rendering correctness.
-- Broad ANSI conformance changes.
-- Redesigning the terminal buffer.
-
-### Completion gate
-
-- The new malformed-input tests pass under AddressSanitizer and
-  UndefinedBehaviorSanitizer on at least one supported platform.
-- A long fuzz or randomized-input run produces no crash or unbounded allocation.
-- Valid ESP32 console output still renders and accepts keyboard input.
-- Logging and automatic scrolling still work.
+Tests cover truncated UTF-8, overflowing CSI arguments, unknown commands, large
+cursor movements, split sequences, embedded NUL, and deterministic random input.
+The opt-in libFuzzer target instruments the parser/state boundary.
 
 ## Milestone 2: Encapsulate the terminal buffer and logging invariants
 
-**Outcome:** Terminal contents have one mutation API, logging cannot retain
-invalid vector-element pointers, and line timestamps consistently reflect the
-chosen semantics.
+**Status:** Complete.
 
-**Expected size:** Medium to large.
+`TerminalData` owns line mutations and maintains a nonempty buffer. External
+readers access immutable lines. `TerminalLine` contains byte glyphs and a
+last-content-mutation timestamp. Pending logging uses a stable line index;
+watcher tokens identify logger-close callbacks. Logger guards are per instance
+and cleanup contains callback exceptions.
 
-### Scope
-
-- Make `TerminalData::mLines` private.
-- Define a narrow terminal-buffer API for:
-  - accessing immutable lines;
-  - inserting/appending/removing lines;
-  - inserting/replacing bytes or glyphs;
-  - erasing validated ranges;
-  - querying row, column, and byte-offset information.
-- Replace `mUnloggedLine` with a stable index or explicit pending-log record.
-- Ensure every mutation preserves the nonempty-buffer invariant.
-- Replace public inheritance in `vector_timed` with composition or fold timestamp
-  metadata into a dedicated `TerminalLine` value.
-- Decide and document when a line timestamp changes: first received byte, most
-  recent mutation, or line completion. Implement that rule consistently.
-- Replace logger callback identity comparisons with registration tokens or an
-  explicit flush protocol.
-- Make logger reentrancy and exception handling scope-bound and per instance.
-- Add tests that force vector reallocations, clear/reset the buffer, close the
-  logger with an incomplete line, and use more than one logger.
-- Keep a temporary read-only adapter for `TerminalView` so this milestone does
-  not require its redesign.
-
-### Deliberately out of scope
-
-- Replacing the renderer.
-- Changing ANSI cursor semantics except where required to prevent invalid access.
-- Changing the log-file format unless necessary to fix corruption.
-
-### Completion gate
-
-- No non-buffer class directly mutates the line container.
-- Sanitizers pass tests that repeatedly grow, clear, and rebuild the buffer.
-- Logging survives reconnection, buffer growth, empty sessions, and shutdown.
-- Line numbers and timestamps still render and log correctly in the application.
+Tests cover buffer growth and removal, timestamp updates, incomplete-line
+flushes, callback registration, reentrancy, and multiple loggers.
 
 ## Milestone 3: Correct and isolate terminal protocol semantics
 
-**Outcome:** ANSI/VT command behavior lives in a testable terminal core with
-explicit coordinate conversions. Common terminal sequences behave predictably.
+**Status:** Complete. [Supported commands](docs/terminal-semantics.md#supported-csi-commands).
 
-**Expected size:** Large.
+The core distinguishes screen positions, buffer positions, rendered columns,
+and UTF-8 byte offsets. Typed commands express cursor movement, erasure,
+graphics changes, and status reports. Viewport dimensions have an explicit API;
+line-number/timestamp margins do not change terminal bounds.
 
-### Scope
-
-- Introduce distinct concepts for:
-  - terminal screen row/column;
-  - scrollback buffer row;
-  - rendered column;
-  - UTF-8 byte offset.
-- Remove mutable reference accessors for cursor row and column.
-- Parse escape sequences into typed commands before applying them.
-- Move command execution into small command handlers or a cohesive terminal-core
-  state machine.
-- Correct and test at least the currently advertised command set:
-  - one-based row/column conversion for `H` and `f`;
-  - default argument values for cursor movement and erase commands;
-  - save/restore cursor;
-  - display and line erasure;
-  - status and cursor-position reports;
-  - supported SGR colors and formatting resets.
-- Define behavior for unsupported private/screen modes: ignore safely and record
-  diagnostics only when useful.
-- Move viewport-size calculation behind one explicit API. Ensure text margins do
-  not incorrectly change terminal column bounds.
-- Add conformance-style table tests for complete sequences and sequences split
-  across every possible input boundary.
-- Update characterization tests where this milestone intentionally fixes prior
-  behavior, documenting each changed behavior in the commit or release notes.
-
-### Deliberately out of scope
-
-- Supporting every VT/xterm command.
-- Full grapheme-cluster or wide-character layout.
-- Capture-session ownership changes.
-
-### Completion gate
-
-- All supported commands have table-driven tests.
-- Cursor and erase tests include tabs, multibyte input, short lines, scrollback,
-  and resize events.
-- ESP32 line editing, command history, coloring, and cursor reports work in a
-  hardware smoke test.
-- Unknown commands remain nonfatal.
+Command tests cover defaults, one-based ANSI coordinates, save/restore,
+viewport/scrollback erasure, reports, SGR state, split input, and unknown modes.
+The reference guide describes rendering limits and the received-tab limitation.
 
 ## Milestone 4: Define a consistent text-encoding boundary
 
-**Outcome:** Keyboard, paste, serial bytes, terminal storage, and rendering agree
-on how UTF-8 is represented. ASCII behavior remains unchanged.
+**Status:** Complete. [UTF-8 policy](docs/terminal-semantics.md#text-encoding).
 
-**Expected size:** Medium to large.
+Serial queues and terminal storage contain bytes. Keyboard Unicode scalars are
+encoded to UTF-8 once; clipboard paste passes bytes through unchanged. Invalid
+received bytes normalize to U+FFFD. Incomplete valid prefixes span reads and
+finish with replacements at stream end. Clear discards incomplete input.
 
-### Scope
-
-- Make serial queues byte-oriented rather than `ImWchar`-oriented.
-- Encode ImGui Unicode code points to UTF-8 exactly once at the input boundary.
-- Preserve paste text as validated or pass-through UTF-8 according to a documented
-  policy.
-- Replace the current length-only UTF-8 helper with a validating decoder limited
-  to modern one-to-four-byte UTF-8.
-- Decide how invalid incoming bytes are displayed and copied. A replacement glyph
-  or an escaped/raw representation are both acceptable if consistently tested.
-- Decide whether terminal storage remains UTF-8 bytes or moves to decoded code
-  points. Keep byte offsets and rendered columns distinct either way.
-- Test ASCII, common accented characters, non-Latin BMP characters, characters
-  outside the BMP, invalid input, copy, paste, selection, and split serial reads.
-- Document that wide characters, combining marks, and grapheme clusters are either
-  supported here or explicitly deferred.
-
-### Deliberately out of scope
-
-- Font fallback and complete international text shaping unless required for
-  correctness on supported fonts.
-- Changing transport/session architecture.
-
-### Completion gate
-
-- Non-ASCII keyboard input and paste produce the intended UTF-8 serial bytes.
-- Incoming UTF-8 renders and copies without out-of-bounds access or truncation.
-- Invalid byte streams follow the documented policy and remain nonfatal.
-- ASCII terminal behavior and performance do not regress noticeably.
-
-### Implementation notes (2026-10-14)
-
-- Encoding and layout policy: [Terminal semantics](docs/terminal-semantics.md#text-encoding).
-  Storage remains UTF-8 bytes; keyboard scalars are encoded once into a byte
-  queue, and clipboard paste passes bytes through unchanged. ImGui uses
-  `IMGUI_USE_WCHAR32` in both dependency build paths.
-- Incoming malformed UTF-8 is normalized to one U+FFFD per invalid byte. Only
-  modern one-to-four-byte scalar encodings are accepted. Valid incomplete
-  prefixes span reads; disconnect/shutdown finishes them with replacements.
-  Clear discards pending input. Copy and logs contain the normalized text.
-- Rendering, selection, cursor movement, overwrite, and byte erasure use whole
-  scalars. Wide-character widths, combining marks, grapheme clusters, shaping,
-  and font fallback remain deferred. Existing ASCII controls are preserved.
-- Validation: clean Linux GCC Debug and Release application builds and 95 tests
-  per configuration; the submodule ImGui Debug build also passes all tests.
-  Clang ASan/UBSan covers the core and headless UI/serial-loopback tests. A
-  61-second libFuzzer run completed 159,454 inputs without a crash.
-- Graphical loopback smoke: setup, ASCII/CRLF/tabs/colors, accented and BMP/non-BMP
-  input, malformed bytes, split reads, keyboard/navigation, scrollback, cursor
-  reports, resize, and normal close were exercised using a local pseudo-terminal.
-  A temporary launch hook opened the PTY, and a temporary modem-ioctl shim allowed
-  the existing status menu to query it. Neither hook is part of the application.
-  Clipboard round trips and normalized log output are covered automatically.
-  Physical modem signals, ESP32 interaction, and Windows execution were not
-  available in this environment.
-- Validation also corrected an existing logger-test callback lifetime and the
-  dependent-template spelling needed by Clang. Serial polling now uses an empty
-  vector because the serial library's vector read overload appends actual bytes.
+Selection, navigation, overwrite, and erasure respect scalar boundaries. A
+scalar occupies one logical cell; wide-character widths, combining layout,
+grapheme selection, shaping, and font fallback are unsupported. ImGui and its
+consumers use `IMGUI_USE_WCHAR32` consistently in both dependency build paths.
 
 ## Milestone 5: Introduce an owned capture session
 
-**Outcome:** One object owns the serial connection and terminal components. Port
-changes, reconnects, failures, and shutdown do not leak resources or depend on
-file-level global state.
+**Status:** Complete. [Ownership and I/O](docs/capture-session.md).
 
-**Expected size:** Large.
+`Capture` owns the view/UI state, settings, and a `CaptureSession`. The session
+owns terminal data/state, loggers, raw capture, connection state, and a worker.
+Only the worker accesses the transport. Bounded RX/TX queues, generation IDs,
+20 ms native I/O timeouts, and worker joining define the thread boundary.
 
-### Scope
+Connection states and capabilities govern UI actions. Reconnect and same-port
+changes preserve terminal contents; a successful different-port connection
+resets protocol state and contents. Stream boundaries flush incomplete text and
+logs and discard unsent output. Raw capture continues until stopped or shutdown.
 
-- Add a `CaptureSession` or equivalent owner for:
-  - the serial transport;
-  - connection/reconnection state;
-  - terminal core/data;
-  - logger;
-  - view-facing session state.
-- Replace the raw `Serial*` with RAII ownership.
-- Define explicit connection transitions and allowable actions for disconnected,
-  connecting, connected, reconnecting, reconfiguring, and failed states.
-- Introduce a serial transport interface and a fake/loopback implementation for
-  tests.
-- Move serial polling and terminal response writes out of ImGui rendering code.
-- Ensure menus query capability/state rather than dereferencing optional terminal
-  objects.
-- Decide whether transport I/O remains nonblocking on the UI thread or moves to a
-  worker. If a worker is used, define queue ownership, shutdown, and error delivery
-  before implementation.
-- Add tests for open failure, repeated reconfiguration, disconnect, reconnect,
-  cancellation, write failure, shutdown, and preservation/reset of terminal data.
-
-### Deliberately out of scope
-
-- Redesigning the setup dialog.
-- Supporting multiple simultaneous sessions unless that falls out naturally from
-  the ownership model.
-- Replacing the Vulkan application shell.
-
-### Completion gate
-
-- Repeated connect/change-port/disconnect cycles show no leaks under available
-  leak-detection tooling.
-- The application remains responsive during expected serial timeouts and reconnect
-  attempts.
-- Auto reconnect, flow-control lines, terminal responses, logging, and shutdown
-  work with real hardware.
-- UI actions are disabled or safe in every connection state.
-
-### Implementation notes (2026-10-15)
-
-- Ownership, threading, state/action table, and stream lifetime policy:
-  [Capture sessions](docs/capture-session.md). `main` owns `Capture`, which owns
-  the view/UI state and one `CaptureSession`. The session owns terminal data,
-  core state, logger, raw capture, and a transport worker. Serial/terminal
-  file-level owners and the raw `Serial*` have been removed.
-- Transport calls run exclusively on the worker. The UI consumes bounded RX
-  events and submits bounded TX outside rendering. Reads/writes use 20 ms fixed
-  timeouts and 4 KiB chunks; generation IDs cancel stale work. Shutdown joins the
-  worker. Native OS open/close latency remains dependent on the device driver.
-- Auto reconnect and same-port reconfiguration preserve terminal contents;
-  successful changes to another port reset protocol state and contents while
-  retaining session preferences. Failed changes retain the old buffer. Stream
-  boundaries finish UTF-8, reset incomplete escapes, flush logs, and discard
-  unsent output. Raw capture stays active until explicitly stopped or shutdown.
-- Setup and menus use session state/capabilities. Connecting and reconnecting
-  modals dismiss on success, cancellation, or failure. Initial menus have valid
-  terminal/logger objects. Selected flow control is passed to the transport;
-  hardware flow control disables manual RTS. Requested modem lines are restored
-  after reconnect; unsupported modem queries do not drop the data connection.
-- A regression test reproduced a bundled serial-library partial-open leak (ten
-  failed configurations leaked ten descriptors). Narrow Unix and Windows fixes
-  release the acquired OS handle if UART configuration throws. No other
-  third-party source was changed by this milestone.
-- Validation: Linux GCC application builds from clean Debug and Release build
-  directories; 129 tests per configuration pass. Clang ASan/UBSan with leak
-  detection passes all 129 tests outside the sandbox's tracing wrapper. Added
-  tests cover fake transport failures, partial/zero writes, bounded TX,
-  cancellation, retry timing, modem controls, 30 repeated reconfigurations,
-  preservation/reset behavior, logging/raw flush, destructor/shutdown, headless
-  UI states/modal dismissal, native PTY transfers, hangup/reconnect, and
-  partial-open descriptor counts.
-- Graphical loopback smoke: setup/connection, ASCII, CR/LF, tabs, colors, UTF-8
-  and malformed input, typing/navigation, status/cursor replies, auto-scroll,
-  clear, resize, device removal/replacement with auto reconnect, cancellation,
-  and normal close (exit 0) were exercised using an isolated PTY. Temporary
-  sources added the PTY to port enumeration and recorded session state; no
-  launch hook or modem-ioctl shim is part of the application. Copy/paste and
-  logging/raw output are also covered automatically. Physical modem signals,
-  ESP32 hardware, and Windows execution were unavailable. Font fallback and
-  other encoding/layout limitations remain as documented in Milestone 4.
+Tests cover failures, cancellation, retries, short/zero writes, queue limits,
+modem requests, repeated reconfiguration, data lifetime, and shutdown. Linux PTY
+tests cover native transfers, hangup/reconnect, and descriptor cleanup.
 
 ## Milestone 6: Make configuration typed, validated, and reliable
 
-**Outcome:** Bad or partial configuration cannot prevent startup, and every saved
-setting has a clear effect on the running or next session.
+**Status:** Complete. [Configuration reference](docs/configuration.md).
 
-**Expected size:** Medium.
+`SettingsValues` contains typed serial, newline, logging/path, and zoom settings.
+`Capture` explicitly loads configuration at startup. Missing, partial, malformed,
+oversized, and unsupported-version files have defined defaults and diagnostics.
+Future-version files are protected from replacement.
 
-### Scope
+Save validates bounded text and numeric fields, applies preferences, and writes
+through a private temporary file with a rolling backup. Recovery restores a
+missing primary from its backup. Setup owns its draft and combo values; menu
+changes to newline, logging, and zoom persist immediately.
 
-- Replace global static configuration loading with explicit startup-time loading.
-- Define typed settings with defaults and validation for port, baud rate, data
-  bits, stop bits, parity, flow control, newline mode, logging, and log path.
-- Recover from missing, partial, malformed, and future-version configuration with
-  actionable messages and safe defaults.
-- Use atomic/recoverable configuration writes where practical.
-- Make combo-box items own their values instead of storing references to external
-  vectors.
-- Apply the selected flow-control mode when opening a port.
-- Apply and persist the selected logging path.
-- Bound all text copied into fixed-size UI buffers, or replace those buffers with
-  safer string-backed input helpers.
-- Test default creation, malformed TOML, missing keys, invalid enum strings,
-  extreme baud strings, round trips, and write failures.
-
-### Deliberately out of scope
-
-- A complete visual redesign of the setup dialog.
-- Cloud synchronization or multiple named profiles unless separately approved.
-
-### Completion gate
-
-- The program always reaches a usable setup UI when the configuration is absent
-  or malformed.
-- Every displayed setting is either applied or clearly marked as informational.
-- Saved settings survive restart and round-trip through TOML tests.
-- Port setup, logging path, and newline mode work in a hardware smoke test.
-
-### Implementation notes (2026-11-12)
-
-- `SettingsValues` holds typed serial parameters, newline mode, logger options,
-  log directory, and zoom. `CaptureSettings` construction performs no file I/O;
-  the capture controller explicitly loads it during startup. The terminal core
-  remains independent of TOML, serial, and ImGui.
-- Version 1 TOML has canonical numeric/enum/boolean fields. Unversioned legacy
-  numeric strings and display labels remain readable, including all parity
-  modes. Missing/invalid fields fall back independently; malformed or oversized
-  TOML and unsupported versions reach Setup with defaults and diagnostics.
-  Future-version files are protected from replacement, including menu saves.
-- Saves finish a private sibling temporary file, retain the previous `.bak`,
-  and rename into place atomically on Unix. Windows uses a recoverable
-  replacement with rollback. A missing primary file is restored from its backup
-  on startup. Failed saves keep current session preferences active and show an
-  actionable message. See [configuration and recovery](docs/configuration.md).
-- Setup owns its typed draft and combo values; enumeration results and static
-  backing vectors are no longer borrowed. Its baud buffer fits every validated
-  `uint32_t` plus the terminator, and strict parsing rejects signs, trailing
-  text, zero, and overflow. Existing non-directory log paths are rejected.
-- Setup Save and connection-menu port changes persist and apply all serial
-  parameters, selected flow control, logging options/directory, and newline
-  mode. Newline/log/zoom menu changes apply immediately and survive restart.
-  Configuration notices and save failures remain visible without displacing
-  connection errors beneath the terminal.
-- Validation: clean Linux GCC Debug and Release builds in `out/milestone6-*`;
-  149 tests pass per configuration. Clang ASan/UBSan and LeakSanitizer pass the
-  same 149 tests outside the sandbox's tracing wrapper. Coverage includes
-  malformed/partial/legacy/future files, strict types and extreme input, all
-  settings' round trips, failed replacement preserving the old file, backup
-  recovery, owned combo values, actual Setup Save activation, restart and zoom
-  persistence, and a native PTY check of software-flow-control flags, newline
-  behavior, and the chosen log directory.
-- Graphical smoke used an isolated Linux PTY under the overall real-or-loopback
-  completion rule: malformed configuration reached a usable Setup; valid
-  settings displayed the saved port/flow/newline/logging choices; Save connected
-  and persisted canonical TOML; `first\nsecond\n` reached the configured log
-  directory without unwanted leading spaces; normal close returned exit 0.
-  No temporary launch hook or source patch was used for this smoke. Physical
-  serial hardware and Windows execution remain unavailable in this environment.
+Tests cover field types/ranges, round trips, restart persistence, backup
+recovery, failed saves, Setup Save, and native PTY flow control/newline/log paths.
 
 ## Milestone 7: Split the terminal view into focused components
 
-**Outcome:** Rendering, selection/scrolling, and keyboard encoding can evolve
-independently. The visible terminal remains functionally equivalent.
+**Status:** Complete. [View components](docs/terminal-view.md).
 
-**Expected size:** Large.
+`TerminalSelection`, viewport calculations, keyboard policy, and palette tables
+build into `imterm_core`. `imterm_view` provides the ImGui keyboard adapter,
+renderer, and coordinating `TerminalView`. Layout produces a complete geometry
+snapshot before interaction. Separate passes draw margins, selection, cursor,
+and text. The UI caret and device cursor have independent roles.
 
-### Scope
+A physical key resolves to one action. Local shortcuts, clipboard operations,
+AltGr, device control bytes, and independent mouse/keyboard flags have explicit
+policies. The outbound byte queue and documented view primitives form the API.
 
-- Separate at least these responsibilities:
-  - terminal renderer and geometry calculation;
-  - selection, clipboard, and viewport navigation;
-  - keyboard/control-sequence mapping;
-  - palette/theme data.
-- Remove or quarantine copied text-editor features that are not part of imterm,
-  including unused editing APIs, identifiers, breakpoints, error markers, queues,
-  and incomplete declarations.
-- Correct misleading accessors and unreachable/duplicated keyboard branches.
-- Replace the single long render method with small rendering passes for margins,
-  selection, cursor, and text.
-- Make render geometry an output of layout rather than partially initialized
-  mutable state.
-- Add unit tests for keyboard mapping and selection calculations. Add lightweight
-  render-state tests where possible without screenshot brittleness.
-- Compare terminal rendering and interaction manually at common DPI scales.
-
-### Deliberately out of scope
-
-- A new visual design.
-- Replacing Dear ImGui.
-- New terminal features solely because the split makes them easier.
-
-### Completion gate
-
-- No single view component owns protocol parsing or serial transport behavior.
-- Keyboard mappings and selection rules are covered independently of ImGui where
-  practical.
-- Line numbers, timestamps, color, cursor, selection, scrolling, clipboard, and
-  DPI behavior pass the smoke checklist.
-- Unused editor APIs and dead members are removed or explicitly justified.
-
-### Implementation notes (2026-11-12)
-
-- [Terminal view components](docs/terminal-view.md) documents the module
-  boundaries, selection/input rules, geometry, retained APIs, and smoke list.
-  `TerminalView` is now a small coordinating adapter; `imterm_view` builds its
-  ImGui renderer/keyboard adapter once for the application and UI tests.
-- `TerminalSelection`, viewport calculations, keyboard policy, and palette data
-  are independent of ImGui and build with the core. Selection reads const
-  terminal data, handles Unicode/tab boundaries and anchored/reversed word/line
-  dragging, and keeps the UI caret independent of the device cursor. ANSI color
-  changes no longer split words. Clipboard text extraction is part of this
-  model; only clipboard platform calls remain in the view adapter.
-- Layout returns a complete geometry snapshot before interaction. Drawing uses
-  separate margin, selection, cursor, and text passes and reports draw-state
-  counts. Hit testing, page size, and margins use current-frame font/scroll
-  measurements. First-frame zoom anchors remain covered. Hidden margins no
-  longer read an uninitialized text buffer, and the initial background is
-  defined before painting. Device cursor blink uses monotonic time.
-- Removed copied editor identifiers/regexes, breakpoints/error markers, editing
-  and incomplete APIs, stale render/cursor-change state, syntax palette roles,
-  and the preprocessor glyph bit. The remaining byte queue is outbound terminal
-  input; read-only navigation, themes, whitespace visualization, and embedding
-  without a child window are intentional supported view primitives.
-- One key resolves to one action. Ctrl/Cmd+V and A do not also send control
-  bytes, Ctrl/Cmd+Z is no longer excluded from alphabetic mapping, Find/zoom
-  remain controller-owned, and Ctrl/Cmd+C still sends the device interrupt.
-  AltGr text survives Ctrl+Alt reporting without an extra alphabetic control
-  byte. Mouse/keyboard enable getters now report their respective flags.
-- Validation: clean Linux GCC Debug/Release builds in `out/milestone7-*`;
-  all 173 tests pass in each configuration. Clang ASan/UBSan with leak detection
-  passes the same suite outside the tracing wrapper. New tests cover the pure
-  selection/navigation/palette/key policies plus actual ImGui input events,
-  clipboard actions, current-frame hit testing at several scales, independent
-  UI/device cursors, complete layout snapshots, margin toggles, color/selection
-  passes, and deterministic cursor focus/blink states. New view sources build
-  without warnings; existing settings-test/third-party warnings remain.
-- Native PTY smoke exercised RX, Unicode clipboard byte round trips, Ctrl+Z,
-  scrolling to the end, and normal shutdown at 100%, 125%, 150%, and 200% scale.
-  CPU-rendered captures of actual ImGui draw data were manually compared for
-  margins, timestamps, ANSI colors, selection, text, scrollbars, and cursor.
-  The Vulkan application additionally launched at 150%, connected through Setup
-  to a PTY, received/logged colored UTF-8 text, and closed with exit 0. Temporary
-  smoke drivers/captures are outside tracked sources; no product launch hook or
-  renderer-backend change is included. Physical hardware and Windows execution
-  remain unavailable.
-- Follow-up observed during smoke: the existing receive path advances by one
-  cell after storing a tab, so subsequent serial text can overwrite expanded
-  tab cells. Core receive/write implementation is unchanged by M7; the view's
-  stored-tab rendering/selection/hit testing is covered independently. This
-  pre-existing protocol limitation is now explicit in
-  [terminal semantics](docs/terminal-semantics.md).
+Tests cover selection/navigation, UTF-8/tab boundaries, keyboard precedence,
+clipboard bytes, input events, layout, colors, focus/blink, and zoom. Visual
+smoke checks use 100%, 125%, 150%, and 200% scaling.
 
 ## Milestone 8: Encapsulate application/platform startup and finish cleanup
 
@@ -624,38 +231,28 @@ replacing these baseline checks.
   input requiring validation at a clear boundary.
 - Assertions may protect internal invariants, but they must not be the only defense
   against malformed external input.
-- Record intentional behavior changes in the milestone notes so characterization
-  tests do not silently redefine expected behavior.
+- Document intentional behavior changes in the relevant reference guide and
+  tests so expected behavior stays explicit.
 
-## Issue-to-milestone map
+## Architecture decisions
 
-| Review finding | Primary milestone |
+| Topic | Current policy |
 | --- | --- |
-| Out-of-bounds and throwing serial input path | 1 |
-| Public terminal lines and invalidated logging pointer | 2 |
-| Unreliable line timestamp and logger callbacks | 2 |
-| Mixed coordinates and incorrect ANSI defaults/conversions | 3 |
-| Unicode and byte/code-point truncation | 4 |
-| Raw serial ownership and capture globals | 5 |
-| Blocking/coupled serial work in UI code | 5 |
-| Fragile settings, combo references, and ignored settings | 6 |
-| Oversized `TerminalView` and copied editor residue | 7 |
-| Global Vulkan/GLFW state and build-system cleanup | 8 |
-| Missing first-party tests | 0 and every later milestone |
+| Line timestamps | Most recent content mutation |
+| Invalid incoming UTF-8 | One U+FFFD per invalid byte; raw capture preserves originals |
+| Terminal storage | UTF-8 bytes with scalar-aware coordinate conversions |
+| Terminal dialect | [Documented ANSI/VT subset](docs/terminal-semantics.md) |
+| Clipboard paste | Pass-through bytes, without newline conversion |
+| Terminal data lifetime | Preserve for same-port reconnect/reconfiguration; reset on successful port change |
+| Serial I/O | Dedicated worker with bounded queues |
+| Configuration | Versioned TOML, validated settings, temporary-file replacement, rolling backup |
+| View responsibilities | [Selection/input/layout/drawing components](docs/terminal-view.md) |
 
-## Decisions to record during implementation
+## Open validation and follow-up work
 
-Several choices should be made explicitly rather than emerging accidentally:
-
-- Whether a line timestamp means first input, last mutation, or line completion.
-- Whether invalid incoming UTF-8 is replaced, escaped, or shown as raw bytes.
-- Whether the terminal buffer stores UTF-8 bytes or decoded code points.
-- Which ANSI/VT dialect and command subset imterm promises to support.
-- Whether terminal contents survive manual reconfiguration and automatic reconnect.
-- Whether serial I/O uses a worker thread or a guaranteed-nonblocking UI-thread
-  pump.
-- Which Windows and Linux compiler/configuration combinations form the supported
-  release matrix.
-
-Record each decision in this document or in a linked architecture decision note
-when the corresponding milestone begins.
+- Define the Windows/Linux compiler and configuration matrix used for release CI
+  as part of Milestone 8. Linux automated and PTY tests do not substitute for
+  Windows execution or physical UART/modem-line checks.
+- Correct received-tab cursor advancement as a separately scoped protocol change,
+  with tests for text following a tab. See the
+  [tab limitation](docs/terminal-semantics.md#tab-limitation).

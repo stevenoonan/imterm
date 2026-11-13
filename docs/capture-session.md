@@ -1,18 +1,18 @@
 # Capture session ownership and I/O
 
 `main` owns a `Capture` controller. It owns the terminal view, find/zoom UI state,
-settings, and one `CaptureSession`. There are no file-level serial or terminal
-owners. `CaptureSession` owns the logger, terminal data/state, raw RX capture,
-connection state, and an I/O worker. The terminal objects exist before connecting,
-so menus can safely use them in every connection state.
-The existing core/view APIs share lifetime references to data, state, and logger;
+settings, and one `CaptureSession`. `CaptureSession` owns the logger, terminal
+data/state, raw RX capture, connection state, and an I/O worker. The terminal
+objects exist before connecting, so menus can safely use them in every
+connection state.
+The core/view APIs share lifetime references to data, state, and logger;
 the controller and session determine when those objects are replaced and closed.
 The [view components](terminal-view.md) separate read-only selection/navigation,
 input policy, theme data, layout, and drawing from those session responsibilities.
 
-`imterm_core` remains independent of the serial library and ImGui.
+`imterm_core` is independent of the serial library and ImGui.
 `imterm_session` adds session behavior, typed configuration, and the
-`SerialTransport` abstraction. The native adapter uses the existing serial
+`SerialTransport` abstraction. The native adapter uses the serial library's
 parameter enums; the controller validates [settings](configuration.md) before
 opening a port. Tests substitute a synchronized byte loopback or exercise the
 native adapter against Linux pseudo-terminals.
@@ -51,7 +51,7 @@ termination is attempted.
 
 | State | Meaning and allowed actions |
 | --- | --- |
-| Disconnected | No active connection; setup, connect, clear/find, logging, and raw capture are safe. |
+| Disconnected | No active connection; Setup offers connection settings. Logging and raw-capture state can persist while disconnected. |
 | Connecting | An initial/manual open is pending. Cancel returns to Disconnected; duplicate connects and serial controls are disabled. |
 | Connected | RX/TX, terminal responses, and supported modem controls are enabled. Disconnect, reconfigure, or change port ends the stream. |
 | Reconnecting | An established connection failed. Retry after one steady-clock second, then after each failed retry. Cancel or disabling auto reconnect returns to Disconnected. |
@@ -91,7 +91,6 @@ waiting in the device are not promised to be captured. Normal shutdown flushes
 terminal logging and raw capture and releases the worker's transport. Repeating
 shutdown is safe.
 
-The bundled serial library has a small integration fix on Unix and Windows:
-if UART configuration throws after acquiring an OS handle, `open` releases that
-handle before rethrowing. A Linux descriptor-count regression test covers this
-partial-open path as well as normal session lifecycle tests under LeakSanitizer.
+The native transport releases an acquired OS handle if UART configuration
+throws during open. Linux descriptor-count tests cover this failure path;
+session lifecycle tests cover normal shutdown and repeated connections.

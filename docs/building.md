@@ -1,14 +1,16 @@
 # Building imterm
 
-Run the commands below from the repository root. The normal build uses Conan
-packages for GLFW and Dear ImGui; initializing their Git submodules is optional.
-Other bundled libraries under `deps/` are built directly by CMake.
+For the shortest route to a running terminal, use the [quick start](../README.md#quick-start).
+Run the commands in this guide from the repository root. Conan supplies GLFW,
+Dear ImGui, TOML, Vulkan libraries, and test dependencies. Other bundled
+libraries under `deps/` are built directly by CMake.
 
 ## Requirements
 
 - A C++20 compiler and a build tool supported by CMake.
 - CMake 3.24 or newer for the repository's version-5 preset file.
 - [Conan 2](https://docs.conan.io/2/installation.html) on `PATH`.
+- Python 3 with virtual-environment support if installing Conan with pip.
 - The platform development packages requested by Conan. Linux builds enable
   both X11 and Wayland support and use ALSA for the terminal bell.
 
@@ -24,7 +26,7 @@ If needed, install Conan in a Python virtual environment:
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install conan
+python -m pip install 'conan>=2,<3'
 ```
 
 Install dependencies, configure, and build:
@@ -42,11 +44,14 @@ only if it is missing. It installs both Debug and Release dependencies into
 install system packages. Re-run it after changing dependencies or removing
 generated build files.
 
+In a new shell, run `. .venv/bin/activate` before using Conan. CMake and CTest
+can use the generated presets without activating the Python environment.
+
 For Release, use `conan-release` in both CMake commands. With the default
 single-configuration generator, the executable is under
 `out/conan/build/Release/`.
 
-## Windows and custom Conan profiles
+## Windows
 
 Use a Visual Studio developer shell when building with MSVC so Conan and CMake
 can find the intended compiler. Install Conan 2 and Ninja for the example below.
@@ -61,6 +66,7 @@ conan install . --output-folder=out/conan --build=missing -s build_type=Release 
 conan install . --output-folder=out/conan --build=missing -s build_type=Debug -c tools.cmake.cmaketoolchain:generator=Ninja
 cmake --preset conan-debug
 cmake --build --preset conan-debug
+.\out\conan\build\Debug\imterm.exe
 ```
 
 Conan prints the generated preset names and build directories. If you choose a
@@ -69,12 +75,16 @@ generators can use different names and executable subdirectories.
 Visual Studio can also open the repository as a CMake folder and use the
 generated presets to build and run `imterm`.
 
+## Custom Conan profiles
+
 To use a custom profile, add `--profile=PROFILE_NAME` to each `conan install`
 command. Use `conan profile path default` to locate the default profile and
 `conan profile show` to inspect the selected settings. Ensure the profile matches
 the compiler and architecture in your shell.
 
-Use a fresh build directory when changing generators or compilers.
+Use a fresh build directory and matching Conan dependencies when changing
+generators or compilers. Conan's [profile guide](https://docs.conan.io/2/reference/config_files/profiles.html)
+explains compiler, architecture, and build-tool settings.
 
 ## Missing system packages
 
@@ -89,6 +99,41 @@ conan install . --output-folder=out/conan --build=missing -s build_type=Debug \
 ```
 
 Repeat for Release if needed.
+
+## Serial-port access
+
+Linux serial-device permissions must allow your account to read and write the
+port. Check its owner and group, substituting the actual device path:
+
+```sh
+ls -l /dev/ttyUSB0
+id -nG
+```
+
+On distributions that assign serial devices to `dialout`, add your account to
+that group, then log out and back in:
+
+```sh
+sudo usermod -aG dialout "$USER"
+```
+
+Use the device's actual group or your distribution's serial-access instructions
+if it uses another policy. Also close any IDE serial monitor or other program
+using the port. On Windows, check the adapter's driver and COM port in Device
+Manager. In Setup, an unplugged saved port is marked **(not detected)**.
+
+## Runtime troubleshooting
+
+- **Vulkan unavailable or the window cannot open:** install the graphics
+  driver and Vulkan runtime for your GPU and run from a graphical session.
+- **Text is too small or too large:** use **Options → View → Zoom** or Ctrl+mouse
+  wheel. Keep `JetBrainsMono-Medium.ttf` beside the executable when moving it.
+- **Garbled serial text:** match all UART settings to the device, including
+  stop bits and flow control. Check the board's console baud rate.
+- **Lines start in the wrong column:** use **Options → New Line Mode → Add CR to LF**
+  for LF-only output. Use Strict for CRLF.
+- **Settings differ between launches:** `imterm.toml` and `imterm.ini` are read
+  from the working directory. Launch from the same directory to reuse them.
 
 ## Optional GLFW and ImGui submodules
 
