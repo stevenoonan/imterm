@@ -7,6 +7,12 @@
 #include "imgui_internal.h"
 #include "test_support.h"
 
+#ifdef __linux__
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#endif
+
 namespace {
 using namespace std::chrono_literals;
 using State = imterm::CaptureSession::State;
@@ -172,4 +178,196 @@ TEST_F(CaptureUiTest, OutputQueueErrorIsVisibleAboveTerminal)
     EXPECT_TRUE(modal.empty());
     ExpectErrorVisible("loopback");
 }
+
+TEST_F(CaptureUiTest, MalformedPartialAndFutureConfigurationReachSetup)
+{
+    for (const auto& text : {std::string("[broken"), std::string("default = 'wrong'"),
+        std::string("version = 999"), std::string("[default.serial]\nbaud = '") + std::string(10000, '9') + "'"}) {
+        capture.reset();
+        std::ofstream("imterm.toml") << text;
+        ASSERT_NO_THROW(capture = std::make_unique<imterm::Capture>());
+        capture->InitializeInterfaceZoom();
+        Frame();
+        Frame();
+        EXPECT_EQ(modal, "Setup");
+        EXPECT_FALSE(capture->GetSettings().GetWarnings().empty());
+        EXPECT_TRUE(imterm::CaptureSettings::Validate(capture->GetSettings().Get()).empty());
+        EXPECT_NE(capture->GetSession().GetTerminalState(), nullptr);
+    }
+}
+
+TEST_F(CaptureUiTest, SelectedSettingsApplyAndSurviveRestart)
+{
+    auto values = capture->GetSettings().Get();
+    values.serial.port = "loopback";
+    values.serial.baudrate = 57600;
+    values.serial.bytesize = serial::sevenbits;
+    values.serial.parity = serial::parity_odd;
+    values.serial.stopbits = serial::stopbits_one;
+    values.serial.flowcontrol = serial::flowcontrol_hardware;
+    values.newlineMode = imterm::TerminalState::NewLineMode::AddLfToCr;
+    values.logging = {true, false, false};
+    values.logPath = directory.Path() / "chosen logs";
+    values.zoomFactor = 1.25f;
+    ASSERT_TRUE(capture->Connect(values));
+    ASSERT_TRUE(Until(State::Connected));
+    EXPECT_EQ(capture->GetSession().GetParameters()->flowcontrol, serial::flowcontrol_hardware);
+    EXPECT_FALSE(capture->GetSession().CanSetRTS());
+    EXPECT_EQ(capture->GetSession().GetTerminalState()->GetNewLineMode(), values.newlineMode);
+    EXPECT_EQ(capture->GetSession().GetLogger().GetBasePath(), values.logPath);
+    EXPECT_TRUE(capture->GetSession().GetLogger().GetOptions().Enabled);
+    EXPECT_FLOAT_EQ(capture->GetInterfaceZoomFactor(), 1.25f);
+    capture.reset();
+    capture = std::make_unique<imterm::Capture>();
+    capture->InitializeInterfaceZoom();
+    EXPECT_EQ(capture->GetSettings().Get().serial.port, "loopback");
+    EXPECT_EQ(capture->GetSettings().Get().serial.baudrate, 57600u);
+    EXPECT_EQ(capture->GetSettings().Get().serial.parity, serial::parity_odd);
+    EXPECT_EQ(capture->GetSession().GetTerminalState()->GetNewLineMode(), values.newlineMode);
+    EXPECT_EQ(capture->GetSession().GetLogger().GetBasePath(), values.logPath);
+    EXPECT_TRUE(capture->GetSession().GetLogger().GetOptions().Enabled);
+    EXPECT_FLOAT_EQ(capture->GetInterfaceZoomFactor(), 1.25f);
+}
+
+TEST_F(CaptureUiTest, InvalidSettingsCannotStartAConnection)
+{
+    auto values = capture->GetSettings().Get();
+    values.serial.baudrate = 0;
+    EXPECT_FALSE(capture->Connect(values));
+    EXPECT_EQ(capture->GetSession().GetState(), State::Disconnected);
+    Frame();
+    EXPECT_EQ(modal, "Setup");
+    EXPECT_EQ(capture->GetSettings().Get().serial.baudrate, 115200u);
+}
+
+TEST_F(CaptureUiTest, SaveFailureDoesNotPreventConnectionOrLoseSessionSettings)
+{
+    auto values = capture->GetSettings().Get();
+    values.serial.port = "loopback";
+    values.newlineMode = imterm::TerminalState::NewLineMode::AddCrToLf;
+    std::filesystem::create_directory("imterm.toml.bak");
+    ASSERT_TRUE(capture->Connect(values));
+    ASSERT_TRUE(Until(State::Connected));
+    EXPECT_FALSE(capture->GetSettings().GetWriteError().empty());
+    EXPECT_EQ(capture->GetSession().GetTerminalState()->GetNewLineMode(), values.newlineMode);
+    capture->GetSession().Disconnect();
+    Frame();
+    EXPECT_EQ(modal, "Setup");
+}
+
+TEST_F(CaptureUiTest, SetupSaveUsesLoadedSerialAndNewlineValues)
+{
+    auto values = capture->GetSettings().Get();
+    values.serial.port = "loopback";
+    values.serial.baudrate = 38400;
+    values.serial.bytesize = serial::sevenbits;
+    values.serial.stopbits = serial::stopbits_one_point_five;
+    values.serial.parity = serial::parity_odd;
+    values.serial.flowcontrol = serial::flowcontrol_software;
+    values.newlineMode = imterm::TerminalState::NewLineMode::AddCrToLf;
+    capture.reset();
+    imterm::CaptureSettings settings("imterm.toml");
+    settings.Load();
+    ASSERT_TRUE(settings.Set(values));
+    ASSERT_TRUE(settings.Save());
+    capture = std::make_unique<imterm::Capture>([this] { return std::make_unique<UiTransport>(failed); });
+    capture->InitializeInterfaceZoom();
+    Frame();
+    Frame();
+    auto* setup = ImGui::FindWindowByName("Setup");
+    ASSERT_NE(setup, nullptr);
+    ImGui::ActivateItemByID(setup->GetID("Save"));
+    Frame();
+    ASSERT_TRUE(Until(State::Connected));
+    const auto& parameters = *capture->GetSession().GetParameters();
+    EXPECT_EQ(parameters.port, "loopback");
+    EXPECT_EQ(parameters.baudrate, 38400u);
+    EXPECT_EQ(parameters.bytesize, serial::sevenbits);
+    EXPECT_EQ(parameters.stopbits, serial::stopbits_one_point_five);
+    EXPECT_EQ(parameters.parity, serial::parity_odd);
+    EXPECT_EQ(parameters.flowcontrol, serial::flowcontrol_software);
+    EXPECT_EQ(capture->GetSession().GetTerminalState()->GetNewLineMode(), values.newlineMode);
+}
+
+TEST_F(CaptureUiTest, ZoomChangesPersistWithoutReplacingSerialPreferences)
+{
+    auto values = capture->GetSettings().Get();
+    values.serial.port = "loopback";
+    values.serial.baudrate = 57600;
+    values.newlineMode = imterm::TerminalState::NewLineMode::AddCrToLf;
+    ASSERT_TRUE(capture->Connect(values));
+    ASSERT_TRUE(Until(State::Connected));
+    capture->QueueInterfaceZoomWheel(1);
+    Frame();
+    imterm::CaptureSettings reloaded("imterm.toml");
+    reloaded.Load();
+    EXPECT_FLOAT_EQ(reloaded.Get().zoomFactor, 1.1f);
+    EXPECT_EQ(reloaded.Get().serial.baudrate, 57600u);
+    EXPECT_EQ(reloaded.Get().serial.port, "loopback");
+    EXPECT_EQ(reloaded.Get().newlineMode, values.newlineMode);
+}
+
+TEST(CaptureComboTest, ItemsOwnTheirValuesAfterSourceAndListsChange)
+{
+    std::vector<serial::PortInfo> ports{{"first", "device", "id"}};
+    imterm::ComboDataItem<serial::PortInfo> item("device", ports.front());
+    ports.front().port = "changed";
+    ports.clear();
+    ports.shrink_to_fit();
+    EXPECT_EQ(item.value.port, "first");
+    auto copy = item;
+    item.value.port = "another";
+    EXPECT_EQ(copy.value.port, "first");
+}
+
+#ifdef __linux__
+TEST_F(CaptureUiTest, NativePtySmokeAppliesSavedFlowControlNewlinesAndLogDirectory)
+{
+    struct Master {
+        int fd = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
+        ~Master() { if (fd >= 0) close(fd); }
+    } master;
+    ASSERT_GE(master.fd, 0);
+    ASSERT_EQ(grantpt(master.fd), 0);
+    ASSERT_EQ(unlockpt(master.fd), 0);
+    auto values = capture->GetSettings().Get();
+    values.serial.port = ptsname(master.fd);
+    values.serial.stopbits = serial::stopbits_one;
+    values.serial.flowcontrol = serial::flowcontrol_software;
+    values.newlineMode = imterm::TerminalState::NewLineMode::AddCrToLf;
+    values.logging = {true, false, false};
+    values.logPath = directory.Path() / "pty logs";
+    capture.reset();
+    imterm::CaptureSettings settings("imterm.toml");
+    settings.Load();
+    ASSERT_TRUE(settings.Set(values));
+    ASSERT_TRUE(settings.Save());
+    capture = std::make_unique<imterm::Capture>();
+    capture->InitializeInterfaceZoom();
+    ASSERT_TRUE(capture->Connect(capture->GetSettings().Get()));
+    ASSERT_TRUE(Until(State::Connected));
+    capture->GetSession().GetLogger().SetUsePrefixTimestamp(false);
+    const int slave = open(values.serial.port.c_str(), O_RDWR | O_NOCTTY);
+    ASSERT_GE(slave, 0);
+    termios attributes{};
+    const int configured = tcgetattr(slave, &attributes);
+    close(slave);
+    ASSERT_EQ(configured, 0);
+    EXPECT_NE(attributes.c_iflag & IXON, 0u);
+    EXPECT_NE(attributes.c_iflag & IXOFF, 0u);
+    ASSERT_EQ(write(master.fd, "first\nsecond\n", 13), 13);
+    const auto deadline = imterm::CaptureSession::Clock::now() + 2s;
+    while (capture->GetSession().GetData()->GetLineCount() < 2
+        && imterm::CaptureSession::Clock::now() < deadline) {
+        Frame();
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_GE(capture->GetSession().GetData()->GetLineCount(), 2u);
+    EXPECT_EQ(imterm::test::LineText(capture->GetSession().GetData()->GetLine(0)), "first");
+    EXPECT_EQ(imterm::test::LineText(capture->GetSession().GetData()->GetLine(1)), "second");
+    capture->Shutdown();
+    const auto log = values.logPath / (std::filesystem::path(values.serial.port).filename().string() + ".log");
+    EXPECT_EQ(imterm::test::ReadFile(log), "first\nsecond\n");
+}
+#endif
 } // namespace

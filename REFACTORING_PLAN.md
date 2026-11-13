@@ -44,7 +44,7 @@ half-conversion.
 - [X] Milestone 3: Correct and isolate terminal protocol semantics
 - [X] Milestone 4: Define a consistent text-encoding boundary
 - [X] Milestone 5: Introduce an owned capture session
-- [ ] Milestone 6: Make configuration typed, validated, and reliable
+- [X] Milestone 6: Make configuration typed, validated, and reliable
 - [ ] Milestone 7: Split the terminal view into focused components
 - [ ] Milestone 8: Encapsulate application/platform startup and finish cleanup
 
@@ -417,6 +417,47 @@ setting has a clear effect on the running or next session.
 - Every displayed setting is either applied or clearly marked as informational.
 - Saved settings survive restart and round-trip through TOML tests.
 - Port setup, logging path, and newline mode work in a hardware smoke test.
+
+### Implementation notes (2026-11-12)
+
+- `SettingsValues` holds typed serial parameters, newline mode, logger options,
+  log directory, and zoom. `CaptureSettings` construction performs no file I/O;
+  the capture controller explicitly loads it during startup. The terminal core
+  remains independent of TOML, serial, and ImGui.
+- Version 1 TOML has canonical numeric/enum/boolean fields. Unversioned legacy
+  numeric strings and display labels remain readable, including all parity
+  modes. Missing/invalid fields fall back independently; malformed or oversized
+  TOML and unsupported versions reach Setup with defaults and diagnostics.
+  Future-version files are protected from replacement, including menu saves.
+- Saves finish a private sibling temporary file, retain the previous `.bak`,
+  and rename into place atomically on Unix. Windows uses a recoverable
+  replacement with rollback. A missing primary file is restored from its backup
+  on startup. Failed saves keep current session preferences active and show an
+  actionable message. See [configuration and recovery](docs/configuration.md).
+- Setup owns its typed draft and combo values; enumeration results and static
+  backing vectors are no longer borrowed. Its baud buffer fits every validated
+  `uint32_t` plus the terminator, and strict parsing rejects signs, trailing
+  text, zero, and overflow. Existing non-directory log paths are rejected.
+- Setup Save and connection-menu port changes persist and apply all serial
+  parameters, selected flow control, logging options/directory, and newline
+  mode. Newline/log/zoom menu changes apply immediately and survive restart.
+  Configuration notices and save failures remain visible without displacing
+  connection errors beneath the terminal.
+- Validation: clean Linux GCC Debug and Release builds in `out/milestone6-*`;
+  149 tests pass per configuration. Clang ASan/UBSan and LeakSanitizer pass the
+  same 149 tests outside the sandbox's tracing wrapper. Coverage includes
+  malformed/partial/legacy/future files, strict types and extreme input, all
+  settings' round trips, failed replacement preserving the old file, backup
+  recovery, owned combo values, actual Setup Save activation, restart and zoom
+  persistence, and a native PTY check of software-flow-control flags, newline
+  behavior, and the chosen log directory.
+- Graphical smoke used an isolated Linux PTY under the overall real-or-loopback
+  completion rule: malformed configuration reached a usable Setup; valid
+  settings displayed the saved port/flow/newline/logging choices; Save connected
+  and persisted canonical TOML; `first\nsecond\n` reached the configured log
+  directory without unwanted leading spaces; normal close returned exit 0.
+  No temporary launch hook or source patch was used for this smoke. Physical
+  serial hardware and Windows execution remain unavailable in this environment.
 
 ## Milestone 7: Split the terminal view into focused components
 

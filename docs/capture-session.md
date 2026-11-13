@@ -9,10 +9,11 @@ The existing core/view APIs share lifetime references to data, state, and logger
 the controller and session determine when those objects are replaced and closed.
 
 `imterm_core` remains independent of the serial library and ImGui.
-`imterm_session` adds session behavior and the `SerialTransport` abstraction. The
-native adapter uses the existing serial parameter enums; broader settings
-validation remains in Milestone 6. Tests substitute a synchronized byte loopback
-or exercise the native adapter against Linux pseudo-terminals.
+`imterm_session` adds session behavior, typed configuration, and the
+`SerialTransport` abstraction. The native adapter uses the existing serial
+parameter enums; the controller validates [settings](configuration.md) before
+opening a port. Tests substitute a synchronized byte loopback or exercise the
+native adapter against Linux pseudo-terminals.
 
 ## Thread and queue boundaries
 

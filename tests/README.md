@@ -90,12 +90,19 @@ cmake --build --preset conan-debug --target imterm_parser_fuzz
   selection/copy, invalid-byte rendering, and Linux pseudo-terminal loopback
   with single-byte serial reads.
 - Logger tests use unique temporary directories and require no user files.
+- Configuration tests cover explicit default creation, legacy files, malformed
+  and partial TOML, future versions, strict enum/boolean/numeric validation,
+  oversized input, every setting's round trip, failed saves, backup recovery,
+  and log directory validation.
 - Capture-session tests cover open/read/write failures, short writes, retry
   timing, cancellation, repeated reconfiguration, modem controls, log/raw flush,
   and deterministic worker shutdown. Linux PTY tests exercise native hangup and
   reconnection, port cycles, and partial-open descriptor cleanup.
 - Capture UI tests render setup, connecting, connected, reconnecting, cancelled,
-  and failed states in a headless ImGui context and check modal dismissal.
+  and failed states in a headless ImGui context and check modal dismissal and
+  error visibility. They exercise Setup's Save button, restart persistence,
+  failed saves, zoom persistence, owned combo values, and a Linux native PTY
+  smoke for saved flow control, newline mode, and log output location.
 - Raw-capture tests verify all 256 byte values, split reads, exact ANSI and
   malformed UTF-8 retention before parsing, start/stop behavior, and disk errors.
 - UI zoom tests cover consecutive zoom steps, scrolling near the bottom,

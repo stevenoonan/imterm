@@ -1,110 +1,45 @@
 #pragma once
 
 #include <filesystem>
-#include <fstream>
+#include <optional>
 #include <string>
-#include <utility>
+#include <string_view>
+#include <vector>
 
 #include "interface_zoom.h"
-#include "toml.hpp"
+#include "serial_transport.h"
+#include "terminal_state.h"
 
 namespace imterm {
 
-	class CaptureSettings
-	{
-		static inline const std::string DefaultConfigFileName = "imterm.toml";
+struct SettingsValues {
+    SerialParameters serial{"COM1", 115200, serial::eightbits, serial::parity_none,
+        serial::stopbits_two, serial::flowcontrol_none};
+    TerminalState::NewLineMode newlineMode = TerminalState::NewLineMode::Strict;
+    TerminalLogger::Options logging{false, true, true};
+    std::filesystem::path logPath = TerminalLogger::GetDefaultLogPath();
+    float zoomFactor = DefaultInterfaceZoom;
+};
 
-		std::string mConfigFileName;
-		toml::table mTable;
+class CaptureSettings {
+public:
+    // Construction has no file I/O. The controller calls Load during startup.
+    explicit CaptureSettings(std::filesystem::path path = "imterm.toml");
+    void Load();
+    bool Save();
+    bool Set(const SettingsValues& values);
+    const SettingsValues& Get() const { return mValues; }
+    const std::vector<std::string>& GetWarnings() const { return mWarnings; }
+    const std::string& GetWriteError() const { return mWriteError; }
+    static std::optional<uint32_t> ParseBaud(std::string_view text);
+    static std::string Validate(const SettingsValues& values);
 
-		toml::table CreateDefaultToml()
-		{
-			return toml::table {
-				{ "default", toml::table {
-					{ "serial", toml::table {
-						{"serial_port", "COM1"},
-						{ "baud", "115200" },
-						{ "data_bits", "8" },
-						{ "stop_bits", "2" },
-						{ "parity", "none" },
-						{ "flow_control", "none" }
-					}},
-					{ "input", toml::table {
-						{"new_line_mode", "strict"}
-					}},
-					{ "display", toml::table {
-						{"zoom_factor", 1.0}
-					}}
-				}}
-			};
-		}
+private:
+    std::filesystem::path mPath;
+    SettingsValues mValues;
+    std::vector<std::string> mWarnings;
+    std::string mWriteError;
+    bool mFutureVersion = false;
+};
 
-		void Read()
-		{
-			mTable = toml::parse_file(mConfigFileName);
-		}
-
-		void Write(const toml::table& aTable)
-		{
-			std::ofstream configStream(mConfigFileName);
-			if (configStream.is_open()) {
-				configStream << aTable;
-			}
-		}
-
-	public:
-		explicit CaptureSettings(
-			std::string aConfigFileName = DefaultConfigFileName)
-			: mConfigFileName(std::move(aConfigFileName))
-		{
-			if (!std::filesystem::exists(mConfigFileName)) {
-				Write(CreateDefaultToml());
-			}
-			Read();
-		}
-
-		toml::node_view<toml::node> get_serial_settings()
-		{
-			return mTable["default"]["serial"];
-		}
-
-		toml::node_view<toml::node> get_input_settings()
-		{
-			return mTable["default"]["input"];
-		}
-
-		float get_zoom_factor()
-		{
-			const auto value = mTable["default"]["display"]["zoom_factor"]
-				.value<double>();
-			return NormalizeInterfaceZoom(
-				value ? static_cast<float>(*value) : DefaultInterfaceZoom);
-		}
-
-		void set_zoom_factor(float aValue)
-		{
-			toml::table* defaultTable = mTable["default"].as_table();
-			if (!defaultTable) {
-				mTable.insert_or_assign("default", toml::table{});
-				defaultTable = mTable["default"].as_table();
-			}
-
-			toml::table* displayTable = (*defaultTable)["display"].as_table();
-			if (!displayTable) {
-				defaultTable->insert_or_assign("display", toml::table{});
-				displayTable = (*defaultTable)["display"].as_table();
-			}
-
-			displayTable->insert_or_assign(
-				"zoom_factor",
-				static_cast<double>(NormalizeInterfaceZoom(aValue)));
-			write();
-		}
-
-		void write()
-		{
-			Write(mTable);
-		}
-	};
-
-}
+} // namespace imterm

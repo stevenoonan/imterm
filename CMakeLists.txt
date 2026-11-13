@@ -163,12 +163,14 @@ imterm_enable_sanitizers(imterm_core)
 
 find_package(Threads REQUIRED)
 add_library(imterm_session STATIC
+	${SRC_DIR}/capture_settings.cpp
+	${SRC_DIR}/capture_settings.h
 	${SRC_DIR}/capture_session.cpp
 	${SRC_DIR}/capture_session.h
 	${SRC_DIR}/serial_transport.cpp
 	${SRC_DIR}/serial_transport.h
 )
-target_link_libraries(imterm_session PUBLIC imterm_core PRIVATE serial Threads::Threads)
+target_link_libraries(imterm_session PUBLIC imterm_core PRIVATE serial Threads::Threads tomlplusplus::tomlplusplus)
 imterm_enable_warnings(imterm_session)
 imterm_enable_sanitizers(imterm_session)
 

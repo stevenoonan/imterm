@@ -11,3 +11,5 @@
 /.venv
 imterm.ini
 imterm.toml
+imterm.toml.bak
+imterm.toml.tmp-*

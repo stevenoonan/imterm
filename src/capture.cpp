@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <initializer_list>
 #include <sstream>
 #include <fstream>
 #include <streambuf>
@@ -40,12 +41,58 @@ struct Capture::Impl {
     RawSerialCapture& raw_capture = session.GetRawCapture();
     ImGuiFileDialog raw_capture_dialog;
     CaptureSettings settings;
-    bool enable_logging = false;
+    SettingsValues draft;
+    std::array<char, 11> baud_text{};
+    std::string setup_error;
+    ImGuiFileDialog log_path_dialog;
     bool& auto_scroll = session.autoScroll;
     std::string serial_name = "[Not Connected]";
-    bool setup_saved = false;
 
-    explicit Impl(CaptureSession::TransportFactory factory) : session(std::move(factory)) {}
+    explicit Impl(CaptureSession::TransportFactory factory, std::filesystem::path settingsPath)
+        : session(std::move(factory)), settings(std::move(settingsPath)) {
+        settings.Load();
+        draft = settings.Get();
+        SetBaudText(draft.serial.baudrate);
+        ApplyPreferences(draft);
+    }
+
+    void SetBaudText(uint32_t baud) {
+        const auto text = std::to_string(baud);
+        baud_text.fill(0);
+        std::copy_n(text.begin(), std::min(text.size(), baud_text.size() - 1), baud_text.begin());
+    }
+
+    void ApplyPreferences(const SettingsValues& values) {
+        term_state->SetNewLineMode(values.newlineMode);
+        term_log->SetBasePath(values.logPath);
+        term_log->SetOptions(values.logging);
+    }
+
+    bool Connect(const SettingsValues& values) {
+        if (session.IsBusy()) return false;
+        setup_error = CaptureSettings::Validate(values);
+        if (!setup_error.empty() || !settings.Set(values)) return false;
+        if (!session.Connect(settings.Get().serial)) return false;
+        draft = settings.Get();
+        SetBaudText(draft.serial.baudrate);
+        ApplyPreferences(draft);
+        if (draft.zoomFactor != GetInterfaceZoomFactor()) interface_zoom.pending = draft.zoomFactor;
+        settings.Save();
+        return true;
+    }
+
+    void SavePreferences() {
+        auto values = settings.Get();
+        values.newlineMode = term_state->GetNewLineMode();
+        values.logging = term_log->GetOptions();
+        values.logPath = term_log->GetBasePath();
+        values.zoomFactor = GetInterfaceZoomFactor();
+        if (settings.Set(values)) settings.Save();
+        draft.newlineMode = values.newlineMode;
+        draft.logging = values.logging;
+        draft.logPath = values.logPath;
+        draft.zoomFactor = values.zoomFactor;
+    }
 
     void Update() {
         const bool received = session.Poll();
@@ -58,11 +105,6 @@ struct Capture::Impl {
         }
         if (received && auto_scroll && !find_state.open) term_view->SetCursorToEnd();
         serial_name = session.GetParameters() ? session.GetParameters()->port : "[Not Connected]";
-        if (setup_saved && session.GetState() == CaptureSession::State::Connected) {
-            settings.write();
-            setup_saved = false;
-        }
-        else if (!session.IsBusy()) setup_saved = false;
     }
 
     void StopRawCapture() {
@@ -136,7 +178,7 @@ struct Capture::Impl {
 
     void InitializeInterfaceZoom() {
         interface_zoom.dpi_scaled_base_style = ImGui::GetStyle();
-        interface_zoom.current = settings.get_zoom_factor();
+        interface_zoom.current = settings.Get().zoomFactor;
         ImGuiStyle& style = ImGui::GetStyle();
         style = *interface_zoom.dpi_scaled_base_style;
         style.ScaleAllSizes(interface_zoom.current);
@@ -156,7 +198,7 @@ struct Capture::Impl {
             }
         }
         interface_zoom.pending = normalized;
-        settings.set_zoom_factor(normalized);
+        SavePreferences();
     }
 
     void ApplyPendingInterfaceZoom() {
@@ -439,6 +481,7 @@ struct Capture::Impl {
         RawCaptureStatus();
 
         ConnectionError();
+        SettingsStatus();
 
         if (term_view) {
             term_view->Render("TerminalView");
@@ -474,9 +517,10 @@ struct Capture::Impl {
                     for (const auto& info : std::get<1>(ports)) {
                         const bool current = info.port == parameters->port;
                         if (ImGui::MenuItem(info.port.c_str(), nullptr, current) && !current) {
-                            auto next = *parameters;
-                            next.port = info.port;
-                            session.Connect(next);
+                            auto next = settings.Get();
+                            next.serial = *parameters;
+                            next.serial.port = info.port;
+                            Connect(next);
                         }
                     }
                     ImGui::EndMenu();
@@ -526,28 +570,18 @@ struct Capture::Impl {
                 {
 
                     auto new_line_mode = term_state->GetNewLineMode();
-                    const char* line_mode_text;
-                    if (new_line_mode == TerminalState::NewLineMode::AddCrToLf) {
-                        line_mode_text = "+LF   ";
-                    }
-                    else if (new_line_mode == TerminalState::NewLineMode::AddLfToCr) {
-                        line_mode_text = "+CR   ";
-                    }
-                    else {
-                        line_mode_text = "Strict";
-                        new_line_mode = TerminalState::NewLineMode::Strict;
-                    }
-
-                    //ImGui::MenuItem("New Line Mode", NULL, false, false);
 
                     if (ImGui::MenuItem("Strict", NULL, (new_line_mode == TerminalState::NewLineMode::Strict))) {
                         term_state->SetNewLineMode(TerminalState::NewLineMode::Strict);
+                        SavePreferences();
                     }
                     if (ImGui::MenuItem("Add CR to LF", NULL, (new_line_mode == TerminalState::NewLineMode::AddCrToLf))) {
                         term_state->SetNewLineMode(TerminalState::NewLineMode::AddCrToLf);
+                        SavePreferences();
                     }
                     if (ImGui::MenuItem("ADD LF to CR", NULL, (new_line_mode == TerminalState::NewLineMode::AddLfToCr))) {
                         term_state->SetNewLineMode(TerminalState::NewLineMode::AddLfToCr);
+                        SavePreferences();
                     }
 
                     ImGui::EndMenu();
@@ -605,16 +639,19 @@ struct Capture::Impl {
                     auto ops = term_log->GetOptions();
                     if (ImGui::MenuItem("Enabled", NULL, ops.Enabled, true)) {
                         ops.Enabled = !ops.Enabled;
-                        enable_logging = ops.Enabled;
+                        term_log->Close();
                         term_log->SetOptions(ops);
+                        SavePreferences();
                     }
                     if (ImGui::MenuItem("Line Numbers", NULL, ops.LineNumbers, true)) {
                         ops.LineNumbers = !ops.LineNumbers;
                         term_log->SetOptions(ops);
+                        SavePreferences();
                     }
                     if (ImGui::MenuItem("Timestamps", NULL, ops.TimeStamps, true)) {
                         ops.TimeStamps = !ops.TimeStamps;
                         term_log->SetOptions(ops);
+                        SavePreferences();
                     }
 
                     ImGui::EndMenu();
@@ -647,337 +684,146 @@ struct Capture::Impl {
     }
 
     template<typename T>
-    void DisplayCombo(ComboData<T>& combo_data) {
-
-        ImGui::TextUnformatted(combo_data.get_label());
-
-        if (!combo_data.get_tool_tip().empty() && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", combo_data.get_tool_tip().c_str());
-        }
-
+    void DisplayCombo(const char* label, T& value, float offset, float width,
+        std::initializer_list<ComboDataItem<T>> items) {
+        ImGui::TextUnformatted(label);
         ImGui::SameLine();
-        ImGui::SetCursorPosX(combo_data.get_input_x_position());
-        ImGui::SetNextItemWidth(combo_data.get_input_width());
-
-        if (ImGui::BeginCombo(combo_data.get_hidden_label(), combo_data.get_preview_value(), combo_data.get_flags()))
-        {
-            for (ComboDataItem<T> item : combo_data.get_items()) {
-                if (ImGui::Selectable(item.get_display_c_str(), item.get_is_selected())){
-                    combo_data.set_selected_item(item);
-                }
-
-                // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                if (item.get_is_selected()) {
-                    ImGui::SetItemDefaultFocus();
-                }
+        ImGui::SetCursorPosX(offset);
+        ImGui::SetNextItemWidth(width);
+        const auto selected = std::find_if(items.begin(), items.end(),
+            [&](const auto& item) { return item.value == value; });
+        const auto id = std::string("##") + label;
+        if (ImGui::BeginCombo(id.c_str(), selected == items.end() ? "Select Value" : selected->label.c_str())) {
+            for (const auto& item : items) {
+                const bool current = item.value == value;
+                if (ImGui::Selectable(item.label.c_str(), current)) value = item.value;
+                if (current) ImGui::SetItemDefaultFocus();
             }
             ImGui::EndCombo();
         }
     }
 
-    void PortSelectionWindow(ImGuiID id) {
-
-        const auto layout = MeasureConnectionDialogLayout(4);
-        const float input_x_offset = layout.input_width;
-        const float input_width = layout.input_width;
-        const float line_height = layout.line_height;
-        const float extra_vertical_spacing = layout.extra_vertical_spacing;
-
-        static std::vector<serial::PortInfo> port_infos;
-
-        static ComboData<PortInfo> cbo_port_selection_data("Serial Port", input_x_offset);
-        static ComboData<bytesize_t> cbo_data_bits_data("Data bits", input_x_offset);
-        static ComboData<stopbits_t> cbo_stop_bits_data("Stop bits", input_x_offset);
-        static ComboData<parity_t> cbo_parity_data("Parity", input_x_offset);
-        static ComboData<flowcontrol_t> cbo_flow_control_data("Flow control", input_x_offset);
-        static char baud_text[128] = "115200";
-
-        static ComboData<TerminalState::NewLineMode> cbo_new_line_mode_data("New Line Mode", input_x_offset, input_width,
-            "A carriage return (CR) and line feed (LF) is needed\n"
-            "for each new line of data. If the input data only\n"
-            "contains one or the other, select the mode that\n"
-            "will add the missing element.");
-
-        static std::vector<ComboDataBase*> cbo_datas = {
-            &cbo_port_selection_data,
-            &cbo_data_bits_data,
-            &cbo_stop_bits_data,
-            &cbo_parity_data,
-            &cbo_flow_control_data,
-            &cbo_new_line_mode_data
-        };
-
-
-        ImGuiStyle& style = ImGui::GetStyle();
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        
-        for (ComboDataBase* comboData : cbo_datas) {
-            comboData->set_input_x_position(input_x_offset);
-            comboData->set_input_width(input_width);
-        }
-
-        int lines = raw_capture.GetError().empty() ? 12 : 13;
-        const float window_width = input_x_offset + input_width + style.WindowPadding.x;
-        const auto& error = session.GetError();
-        const float error_height = error.empty() ? 0.0f
-            : ImGui::CalcTextSize(error.c_str(), nullptr, false,
-                window_width - style.WindowPadding.x * 2.0f).y + style.ItemSpacing.y;
-
-        ImGui::OpenPopup("Setup");
-
-        ImVec2 center = viewport->GetCenter();
-        ImVec2 window_size = ImVec2(window_width, (line_height * lines) + extra_vertical_spacing + error_height);
-        ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
-        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-
-        if (ImGui::BeginPopupModal("Setup", NULL, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-
-            ConnectionError();
-
-            static std::vector<imterm::ComboDataItem<serial::PortInfo>> port_items;
-
-            auto port_infos_tuple = serial::list_ports_cached(port_cache_duration);
-            if (std::get<0>(port_infos_tuple)) {
-                // There is new data
-                port_items.clear();
-                port_infos = std::get<1>(port_infos_tuple);
-                for (serial::PortInfo& info : port_infos) {
-                    imterm::ComboDataItem<serial::PortInfo> item(info.hardware_id, info.port, false, info);
-                    port_items.push_back(item);
-                }
-                cbo_port_selection_data.set_items(port_items);
-            }
-
-            static bool init_options = true;
-            if (init_options) {
-                init_options = false;
-
-                static bytesize_t bytesize_values[] = {
-                    fivebits,
-                    sixbits,
-                    sevenbits,
-                    eightbits
-                };
-
-                std::vector<ComboDataItem<bytesize_t>> databits_items;
-                databits_items.push_back(ComboDataItem<bytesize_t>("5", false, bytesize_values[0]));
-                databits_items.push_back(ComboDataItem<bytesize_t>("6", false, bytesize_values[1]));
-                databits_items.push_back(ComboDataItem<bytesize_t>("7", false, bytesize_values[2]));
-                databits_items.push_back(ComboDataItem<bytesize_t>("8", true, bytesize_values[3]));
-                cbo_data_bits_data.set_items(databits_items);
-
-                static stopbits_t stopbits_values[] = {
-                    stopbits_one,
-                    stopbits_one_point_five,
-                    stopbits_two
-                };
-
-                std::vector<ComboDataItem<stopbits_t>> stopbits_items;
-                stopbits_items.push_back(ComboDataItem<stopbits_t>("1",true, stopbits_values[0]));
-                stopbits_items.push_back(ComboDataItem<stopbits_t>("1.5",false, stopbits_values[1]));
-                stopbits_items.push_back(ComboDataItem<stopbits_t>("2",false, stopbits_values[2]));
-                cbo_stop_bits_data.set_items(stopbits_items);
-
-                static parity_t parity_values[] = {
-                    parity_none,
-                    parity_even,
-                    parity_mark,
-                    parity_space
-                };
-
-                std::vector<ComboDataItem<parity_t>> parity_items;
-                parity_items.push_back(ComboDataItem<parity_t>("None", true, parity_values[0]));
-                parity_items.push_back(ComboDataItem<parity_t>("Even", false, parity_values[1]));
-                parity_items.push_back(ComboDataItem<parity_t>("Mark", false, parity_values[2]));
-                parity_items.push_back(ComboDataItem<parity_t>("Space", false, parity_values[3]));
-                cbo_parity_data.set_items(parity_items);
-
-                static flowcontrol_t flowcontrol_values[] = {
-                    flowcontrol_none,
-                    flowcontrol_hardware,
-                    flowcontrol_software
-                };
-
-                std::vector<ComboDataItem<flowcontrol_t>> flow_control_items;
-                flow_control_items.push_back(ComboDataItem<flowcontrol_t>("None", true, flowcontrol_values[0]));
-                flow_control_items.push_back(ComboDataItem<flowcontrol_t>("Hardware", false, flowcontrol_values[1]));
-                flow_control_items.push_back(ComboDataItem<flowcontrol_t>("Software", true, flowcontrol_values[2]));
-                cbo_flow_control_data.set_items(flow_control_items);
-
-                static TerminalState::NewLineMode new_line_mode_values[] = {
-                    TerminalState::NewLineMode::Strict,
-                    TerminalState::NewLineMode::AddCrToLf,
-                    TerminalState::NewLineMode::AddLfToCr
-                };
-
-                std::vector<ComboDataItem<TerminalState::NewLineMode>> new_line_mode_items;
-                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Strict", true, new_line_mode_values[0]));
-                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Add CR to LF", false, new_line_mode_values[1]));
-                new_line_mode_items.push_back(ComboDataItem<TerminalState::NewLineMode>("Add LF to CR", true, new_line_mode_values[2]));
-                cbo_new_line_mode_data.set_items(new_line_mode_items);
-                
-                auto serial_node = settings.get_serial_settings();
-
-                cbo_port_selection_data.set_selected_item(serial_node);
-                cbo_data_bits_data.set_selected_item(serial_node);
-                cbo_stop_bits_data.set_selected_item(serial_node);
-                cbo_parity_data.set_selected_item(serial_node);
-                cbo_flow_control_data.set_selected_item(serial_node);
-
-                std::optional<std::string> value_str = serial_node["baud"].value<std::string>();
-
-                if (value_str.has_value()) {
-                    const auto count = value_str->copy(baud_text, sizeof(baud_text) - 1);
-                    baud_text[count] = 0;
-                }
-
-                auto input_node = settings.get_input_settings();
-                cbo_new_line_mode_data.set_selected_item(input_node);
-                    
-                
-            }
-
-            if (cbo_port_selection_data.get_items().size() == 0) {
-                ImGui::Text("There are no COM ports!");
-            }
-            else {
-                DisplayCombo(cbo_port_selection_data);
-            }
-
-            ImGui::Text("Baud ");
-            ImGui::SameLine();
-            ImGui::SetCursorPosX(input_x_offset);
-            ImGui::SetNextItemWidth(input_width);
-            ImGui::InputText("##Baud", baud_text, IM_ARRAYSIZE(baud_text));
-
-            DisplayCombo(cbo_data_bits_data);
-            DisplayCombo(cbo_stop_bits_data);
-            DisplayCombo(cbo_parity_data);
-            DisplayCombo(cbo_flow_control_data);
-            ImGui::Spacing();
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            ImGui::Spacing();
-            DisplayCombo(cbo_new_line_mode_data);
-            
-            static std::string log_file_path = TerminalLogger::GetDefaultLogPath().string();
-            ImGui::TextUnformatted("Enable logging ");
+    void SettingsStatus() {
+        if (!settings.GetWarnings().empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Configuration notice (hover)");
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Log files will be saved to\n%s", log_file_path.c_str());
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                for (const auto& message : settings.GetWarnings()) ImGui::TextWrapped("%s", message.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
             }
-            
-            ImGui::SameLine();
-            ImGui::SetCursorPosX(input_x_offset);
-            ImGui::Checkbox("##enable_logging", &enable_logging);
-            
-            ImGui::SameLine();
-            float xPos = ImGui::GetCursorPosX();
-            auto x = input_width - (ImGui::GetCursorPosX() - input_x_offset);
-
-            if (!enable_logging) ImGui::BeginDisabled();
-            // open Dialog Simple
-            if (ImGui::Button("Choose Path", ImVec2(x,0.0f)))
-                ImGuiFileDialog::Instance()->OpenDialog(
-                    "ChooseFileDlgKey", "Choose Path", nullptr, log_file_path,
-                    1,
-                    nullptr,
-                    ImGuiFileDialogFlags_Modal
-                );
-
-            if (!enable_logging) ImGui::EndDisabled();
-
-
-
-            //ImGuiFileDialog::Instance()->Path
-
-            // display
-            if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey"))
-            {
-                // action if OK
-                if (ImGuiFileDialog::Instance()->IsOk())
-                {
-                    log_file_path = ImGuiFileDialog::Instance()->GetFilePathName();
-                    std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
-                    // action
-                }
-
-                // close
-                ImGuiFileDialog::Instance()->Close();
-            }
-
-            if (ImGui::Button(raw_capture.IsActive() ? "Stop raw capture" : "Start raw capture...")) {
-                if (raw_capture.IsActive()) StopRawCapture();
-                else OpenRawCaptureDialog();
-            }
-            if (raw_capture.IsActive()) {
-                ImGui::SameLine();
-                ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
-            }
-            if (!raw_capture.GetError().empty()) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Raw capture error");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", raw_capture.GetError().c_str());
-            }
-            ShowRawCaptureDialog();
-
-            ImGui::NewLine();
-
-            if (ImGui::Button("Save", ImVec2(120, 0))) {
-
-                int baud_int = 115200;
-
-                try {
-                    baud_int = std::stoi(std::string(baud_text));
-                }
-                catch (const std::exception& e) {
-                    std::cerr << "Could not convert baud " << e.what() << "\n";
-                    baud_int = -1;
-                }
-
-                if (baud_int != -1) {
-
-
-
-                    if (cbo_port_selection_data.item_is_selected()) {
-
-                        serial_name = cbo_port_selection_data.get_selected_data().port;
-
-                        SerialParameters parameters;
-                        parameters.port = serial_name;
-                        parameters.baudrate = baud_int;
-                        parameters.bytesize = cbo_data_bits_data.get_selected_data();
-                        parameters.parity = cbo_parity_data.get_selected_data();
-                        parameters.stopbits = cbo_stop_bits_data.get_selected_data();
-                        parameters.flowcontrol = cbo_flow_control_data.get_selected_data();
-                        setup_saved = session.Connect(parameters);
-                        auto log_options = term_log->GetOptions();
-                        log_options.Enabled = enable_logging;
-                        term_log->SetOptions(log_options);
-                    }
-
-                    if (setup_saved) {
-
-                        auto serial_node_tbl = settings.get_serial_settings().as_table();
-                        cbo_port_selection_data.put_selected_item(serial_node_tbl);
-                        cbo_data_bits_data.put_selected_item(serial_node_tbl);
-                        cbo_stop_bits_data.put_selected_item(serial_node_tbl);
-                        cbo_parity_data.put_selected_item(serial_node_tbl);
-                        cbo_flow_control_data.put_selected_item(serial_node_tbl);
-                        serial_node_tbl->insert("baud", baud_text);
-
-                        auto input_node_tbl = settings.get_input_settings().as_table();
-                        cbo_new_line_mode_data.put_selected_item(input_node_tbl);
-
-                        term_state->SetNewLineMode(cbo_new_line_mode_data.get_selected_data());
-
-                        ImGui::CloseCurrentPopup();
-
-                    }
-                }
-            }
-
-            ImGui::EndPopup();
         }
+        for (const auto* message : std::initializer_list<const std::string*>{&setup_error, &settings.GetWriteError()}) {
+            if (message->empty()) continue;
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.3f, 1.0f));
+            ImGui::TextWrapped("%s", message->c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+
+    void PortSelectionWindow(ImGuiID) {
+        const auto layout = MeasureConnectionDialogLayout(4);
+        const float offset = layout.input_width;
+        const float width = layout.input_width;
+        const auto& style = ImGui::GetStyle();
+        const float window_width = offset + width + style.WindowPadding.x;
+        const float wrap_width = window_width - style.WindowPadding.x * 2.0f;
+        float status_height = settings.GetWarnings().empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
+        for (const auto* text : std::initializer_list<const std::string*>{&session.GetError(), &setup_error, &settings.GetWriteError()}) {
+            if (!text->empty())
+                status_height += ImGui::CalcTextSize(text->c_str(), nullptr, false, wrap_width).y + style.ItemSpacing.y;
+        }
+        const int lines = raw_capture.GetError().empty() ? 13 : 14;
+        ImGui::OpenPopup("Setup");
+        ImGui::SetNextWindowSize(ImVec2(window_width,
+            layout.line_height * lines + layout.extra_vertical_spacing + status_height), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (!ImGui::BeginPopupModal("Setup", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
+
+        ConnectionError();
+        SettingsStatus();
+        // Keep a saved port selectable even while unplugged. A failed open then
+        // produces a useful transport error rather than silently picking a port.
+        const auto ports = serial::list_ports_cached(port_cache_duration);
+        std::vector<ComboDataItem<std::string>> port_items;
+        for (const auto& info : std::get<1>(ports)) port_items.emplace_back(info.port, info.port);
+        if (std::none_of(port_items.begin(), port_items.end(),
+            [&](const auto& item) { return item.value == draft.serial.port; }))
+            port_items.emplace_back(draft.serial.port + " (not detected)", draft.serial.port);
+        ImGui::TextUnformatted("Serial Port");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(offset);
+        ImGui::SetNextItemWidth(width);
+        if (ImGui::BeginCombo("##Serial Port", draft.serial.port.c_str())) {
+            for (const auto& item : port_items) {
+                const bool selected = item.value == draft.serial.port;
+                if (ImGui::Selectable(item.label.c_str(), selected)) draft.serial.port = item.value;
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::TextUnformatted("Baud");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(offset);
+        ImGui::SetNextItemWidth(width);
+        ImGui::InputText("##Baud", baud_text.data(), baud_text.size());
+        DisplayCombo<bytesize_t>("Data bits", draft.serial.bytesize, offset, width,
+            {{"5", fivebits}, {"6", sixbits}, {"7", sevenbits}, {"8", eightbits}});
+        DisplayCombo<stopbits_t>("Stop bits", draft.serial.stopbits, offset, width,
+            {{"1", stopbits_one}, {"1.5", stopbits_one_point_five}, {"2", stopbits_two}});
+        DisplayCombo<parity_t>("Parity", draft.serial.parity, offset, width,
+            {{"None", parity_none}, {"Odd", parity_odd}, {"Even", parity_even}, {"Mark", parity_mark}, {"Space", parity_space}});
+        DisplayCombo<flowcontrol_t>("Flow control", draft.serial.flowcontrol, offset, width,
+            {{"None", flowcontrol_none}, {"Hardware", flowcontrol_hardware}, {"Software", flowcontrol_software}});
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        DisplayCombo<TerminalState::NewLineMode>("New Line Mode", draft.newlineMode, offset, width,
+            {{"Strict", TerminalState::NewLineMode::Strict}, {"Add CR to LF", TerminalState::NewLineMode::AddCrToLf},
+             {"Add LF to CR", TerminalState::NewLineMode::AddLfToCr}});
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("If the device sends only CR or LF, select the mode\n"
+                "that adds the missing character to start a new line.");
+        ImGui::TextUnformatted("Enable logging");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(offset);
+        ImGui::Checkbox("##enable_logging", &draft.logging.Enabled);
+        ImGui::SameLine();
+        if (ImGui::Button("Choose Path"))
+            log_path_dialog.OpenDialog("LogPath", "Choose log directory", nullptr, draft.logPath.string(),
+                1, nullptr, ImGuiFileDialogFlags_Modal);
+        ImGui::TextUnformatted("Log directory (hover for path)");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", draft.logPath.string().c_str());
+        if (log_path_dialog.Display("LogPath")) {
+            if (log_path_dialog.IsOk()) draft.logPath = log_path_dialog.GetCurrentPath();
+            log_path_dialog.Close();
+        }
+        if (ImGui::Button(raw_capture.IsActive() ? "Stop raw capture" : "Start raw capture...")) {
+            if (raw_capture.IsActive()) StopRawCapture();
+            else OpenRawCaptureDialog();
+        }
+        if (raw_capture.IsActive()) {
+            ImGui::SameLine();
+            ImGui::Text("%llu bytes", static_cast<unsigned long long>(raw_capture.GetByteCount()));
+        }
+        if (!raw_capture.GetError().empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Raw capture error");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", raw_capture.GetError().c_str());
+        }
+        ShowRawCaptureDialog();
+        ImGui::NewLine();
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            const auto baud = CaptureSettings::ParseBaud(baud_text.data());
+            if (!baud) setup_error = "Baud must be a whole number from 1 to 4294967295.";
+            else {
+                draft.serial.baudrate = *baud;
+                if (Connect(draft)) ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::EndPopup();
     }
 
     void ReconnectionWindow(ImGuiID) {
@@ -1006,7 +852,10 @@ struct Capture::Impl {
     }
 };
 
-    Capture::Capture(CaptureSession::TransportFactory factory) : mImpl(std::make_unique<Impl>(std::move(factory))) {}
+    Capture::Capture(CaptureSession::TransportFactory factory, std::filesystem::path settingsPath)
+        : mImpl(std::make_unique<Impl>(std::move(factory), std::move(settingsPath))) {}
+    bool Capture::Connect(const SettingsValues& values) { return mImpl->Connect(values); }
+    const CaptureSettings& Capture::GetSettings() const { return mImpl->settings; }
     Capture::~Capture() = default;
     void Capture::Render() { mImpl->CaptureWindowCreate(); }
     void Capture::Update() {
